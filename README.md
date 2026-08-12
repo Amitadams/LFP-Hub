@@ -98,7 +98,7 @@ Depends on sibling `../DesksideHub/DesksideHub.Core`.
 
 ## Version
 
-**0.0.11** — Bulk close-out is a headered table (Username, Display Name, Password, ITA Number, Type). No release pushed until requested.
+**0.0.12** — Bulk table paste fills rows (Ctrl+V / Paste / CSV); Run starts jobs.
 
 **0.0.10** — Bulk CSV headers: Username, Password, Name, Ticket Type, Badge (per-row types).
 

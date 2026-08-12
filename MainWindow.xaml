@@ -105,7 +105,7 @@
 
             <StackPanel x:Name="BulkPanel" Margin="0,4,0,0" Visibility="Collapsed">
               <TextBlock Style="{StaticResource HintText}" Margin="0,0,0,8" TextWrapping="Wrap"
-                         Text="Edit the table below. Type per row: Password, First login, MFA, or No account. Load CSV fills the same columns. Password is required only for Password / First login."/>
+                         Text="Paste (Ctrl+V) or Load CSV fills the table only — it does not run. Columns: Username, Display Name, Password, ITA Number, Type. Press Run when ready."/>
               <DockPanel Margin="0,0,0,8">
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                   <Button Content="Add row" Click="BtnBulkAddRow_Click"
@@ -115,6 +115,9 @@
                   <Button Content="Sample" Click="BtnBulkSample_Click"
                           Style="{StaticResource GhostButton}" Padding="12,6" Margin="0,0,8,0"
                           ToolTip="Fill sample rows"/>
+                  <Button Content="Paste" Click="BtnBulkPaste_Click"
+                          Style="{StaticResource GhostButton}" Padding="12,6" Margin="0,0,8,0"
+                          ToolTip="Paste clipboard (Excel / CSV / tab text) into the table"/>
                   <Button Content="Load CSV…" Click="BtnLoadCsv_Click"
                           Style="{StaticResource GhostButton}" Padding="12,6"/>
                 </StackPanel>
@@ -138,7 +141,9 @@
                         MaxHeight="320"
                         FontSize="13"
                         SelectionUnit="Cell"
-                        ClipboardCopyMode="IncludeHeader">
+                        ClipboardCopyMode="IncludeHeader"
+                        PreviewKeyDown="BulkGrid_PreviewKeyDown"
+                        Loaded="BulkGrid_Loaded">
                 <DataGrid.Columns>
                   <DataGridTextColumn Header="Username" Binding="{Binding Username, UpdateSourceTrigger=PropertyChanged}" Width="1.1*"/>
                   <DataGridTextColumn Header="Display Name" Binding="{Binding DisplayName, UpdateSourceTrigger=PropertyChanged}" Width="1.3*"/>

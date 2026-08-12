@@ -45,7 +45,9 @@ public sealed class BulkGridRow : INotifyPropertyChanged
         get => _typeLabel;
         set
         {
-            var v = string.IsNullOrWhiteSpace(value) ? "Password" : value.Trim();
+            var raw = string.IsNullOrWhiteSpace(value) ? "Password" : value.Trim();
+            var mode = BulkCloseoutParser.NormalizeMode(raw);
+            var v = mode is not null ? BulkCloseoutParser.ModeLabel(mode) : "Password";
             if (_typeLabel == v) return;
             _typeLabel = v;
             OnPropertyChanged();
@@ -203,25 +205,151 @@ public static class BulkCloseoutParser
 
     public static ObservableCollection<BulkGridRow> ParseToGrid(string text, string defaultMode = "password")
     {
-        var parsed = Parse(text, defaultMode);
+        // Lenient fill for paste/CSV — no password validation; Run validates later.
+        return FillGridFromText(text, defaultMode, extraBlankRows: 3);
+    }
+
+    /// <summary>
+    /// Map clipboard/CSV text into grid rows without validating passwords.
+    /// Never runs jobs — UI fill only.
+    /// </summary>
+    public static ObservableCollection<BulkGridRow> FillGridFromText(
+        string text,
+        string defaultMode = "password",
+        int extraBlankRows = 3)
+    {
+        defaultMode = NormalizeMode(defaultMode) ?? "password";
         var list = new ObservableCollection<BulkGridRow>();
-        foreach (var r in parsed.Rows)
+        var lines = SplitLines(text).ToList();
+        if (lines.Count == 0)
+            return CreateEmptyGrid();
+
+        var start = 0;
+        int userCol = 0, passCol = -1, nameCol = -1, typeCol = -1, itaCol = -1;
+        var hasHeader = false;
+
+        var first = SplitFields(lines[0]);
+        if (LooksLikeHeader(first))
         {
+            hasHeader = true;
+            start = 1;
+            userCol = IndexOfHeader(first,
+                "username", "user", "login", "samaccountname", "uid", "account");
+            passCol = IndexOfHeader(first,
+                "password", "temp", "otp", "onetimepassword", "temp_password",
+                "temporary", "temppassword");
+            nameCol = IndexOfHeader(first,
+                "displayname", "display name", "name", "fullname", "display", "fullname");
+            itaCol = IndexOfHeader(first,
+                "itanumber", "ita", "ticket", "ticketnumber", "ticketkey", "key");
+            typeCol = IndexOfHeader(first,
+                "tickettype", "type", "mode", "job",
+                "closeout", "closeouttype", "requesttype");
+            if (userCol < 0) userCol = 0;
+            // If only one column header and no password header, still ok
+            if (passCol < 0 && first.Count >= 2 && nameCol != 1 && typeCol != 1 && itaCol != 1)
+                passCol = 1;
+        }
+
+        for (var i = start; i < lines.Count; i++)
+        {
+            var raw = lines[i].Trim();
+            if (raw.Length == 0 || raw.StartsWith('#') || raw.StartsWith("//"))
+                continue;
+
+            var fields = SplitFields(raw);
+            if (fields.Count == 0) continue;
+
+            string user = "";
+            string pass = "";
+            string name = "";
+            string typeRaw = "";
+            string ita = "";
+
+            if (hasHeader)
+            {
+                user = Get(fields, userCol);
+                pass = passCol >= 0 ? Get(fields, passCol) : "";
+                if (nameCol >= 0) name = Get(fields, nameCol);
+                if (typeCol >= 0) typeRaw = Get(fields, typeCol);
+                if (itaCol >= 0) ita = Get(fields, itaCol);
+
+                // Positional fallback when headers exist but some columns missing:
+                // Username, Display Name, Password, ITA, Type is common Excel order
+                if (fields.Count >= 5 && passCol < 0 && nameCol < 0)
+                {
+                    user = fields[0];
+                    name = fields[1];
+                    pass = fields[2];
+                    ita = fields[3];
+                    typeRaw = fields[4];
+                }
+            }
+            else
+            {
+                // No header: treat as Username, Display Name, Password, ITA, Type
+                // or shorter prefixes
+                user = fields.Count > 0 ? fields[0] : "";
+                if (fields.Count == 2)
+                {
+                    var m = NormalizeMode(fields[1]);
+                    if (m is not null && !LooksLikePassword(fields[1]))
+                        typeRaw = fields[1];
+                    else
+                        pass = fields[1];
+                }
+                else if (fields.Count == 3)
+                {
+                    // user, name|pass, type|pass
+                    var m2 = NormalizeMode(fields[2]);
+                    if (m2 is not null)
+                    {
+                        name = fields[1];
+                        typeRaw = fields[2];
+                    }
+                    else if (LooksLikePassword(fields[1]) || fields[1].Length >= 8)
+                    {
+                        pass = fields[1];
+                        name = fields[2];
+                    }
+                    else
+                    {
+                        name = fields[1];
+                        pass = fields[2];
+                    }
+                }
+                else if (fields.Count >= 4)
+                {
+                    // Username, Display Name, Password, ITA [, Type]
+                    user = fields[0];
+                    name = fields[1];
+                    pass = fields[2];
+                    ita = fields[3];
+                    if (fields.Count >= 5)
+                        typeRaw = fields[4];
+                }
+            }
+
+            user = NormalizeUsername(user);
+            if (string.IsNullOrWhiteSpace(user) && string.IsNullOrWhiteSpace(ita)
+                && string.IsNullOrWhiteSpace(name) && string.IsNullOrWhiteSpace(pass))
+                continue;
+
+            var mode = NormalizeMode(typeRaw) ?? defaultMode;
             list.Add(new BulkGridRow
             {
-                Username = r.Username,
-                DisplayName = r.Name,
-                Password = r.TempPassword,
-                Ita = r.Ita,
-                TypeLabel = ModeLabel(r.Mode),
+                Username = user,
+                DisplayName = name.Trim().Trim('"'),
+                Password = pass.Trim().Trim('"'),
+                Ita = NormalizeIta(ita),
+                TypeLabel = ModeLabel(mode),
             });
         }
-        // Keep a few blank rows for more entry
-        for (var i = 0; i < 3; i++)
+
+        for (var i = 0; i < extraBlankRows; i++)
             list.Add(new BulkGridRow());
-        if (list.Count == 0)
-            return CreateEmptyGrid();
-        return list;
+
+        return list.Count == 0 ? CreateEmptyGrid() : list;
     }
 
     public static BulkParseResult ParseFile(string path, string defaultMode = "password") =>

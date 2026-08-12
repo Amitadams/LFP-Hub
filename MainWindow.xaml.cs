@@ -3,6 +3,7 @@ using System.IO;
 using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using DesksideHub.Models;
 using DesksideHub.Platform;
 using DesksideHub.Services;
@@ -39,13 +40,7 @@ public partial class MainWindow : Window
     {
         if (BulkGrid is null) return;
         _bulkGrid = BulkCloseoutParser.CreateEmptyGrid();
-        BulkGrid.ItemsSource = _bulkGrid;
-        // Type column combo items
-        foreach (var col in BulkGrid.Columns)
-        {
-            if (col is DataGridComboBoxColumn combo)
-                combo.ItemsSource = BulkCloseoutParser.TypeLabels;
-        }
+        BindBulkGrid();
         RefreshBulkStatusFromGrid();
     }
 
@@ -54,8 +49,127 @@ public partial class MainWindow : Window
         if (BulkParseStatus is null) return;
         var filled = _bulkGrid.Count(r => !r.IsEmpty);
         BulkParseStatus.Text = filled == 0
-            ? "Enter rows in the table, or Load CSV…"
+            ? "Type in the table, Paste (Ctrl+V), or Load CSV…"
             : $"{filled} row(s) entered — Run validates and starts.";
+    }
+
+    void BulkGrid_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is not DataGrid grid) return;
+        CommandManager.RemovePreviewExecutedHandler(grid, BulkGrid_OnPreviewExecuted);
+        CommandManager.AddPreviewExecutedHandler(grid, BulkGrid_OnPreviewExecuted);
+    }
+
+    void BulkGrid_OnPreviewExecuted(object sender, ExecutedRoutedEventArgs e)
+    {
+        if (e.Command == ApplicationCommands.Paste)
+        {
+            if (TryPasteBulkFromClipboard())
+                e.Handled = true;
+        }
+    }
+
+    void BulkGrid_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.V && Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            if (TryPasteBulkFromClipboard())
+                e.Handled = true;
+        }
+        else if (e.Key == Key.Insert && Keyboard.Modifiers == ModifierKeys.Shift)
+        {
+            if (TryPasteBulkFromClipboard())
+                e.Handled = true;
+        }
+    }
+
+    void BtnBulkPaste_Click(object sender, RoutedEventArgs e)
+    {
+        if (!TryPasteBulkFromClipboard())
+            ErrText.Text = "Clipboard has no pasteable text.";
+    }
+
+    /// <summary>
+    /// Multi-line / multi-column clipboard fills table rows only — never starts a run.
+    /// Single short value leaves default cell paste alone.
+    /// </summary>
+    bool TryPasteBulkFromClipboard()
+    {
+        try
+        {
+            if (!Clipboard.ContainsText())
+                return false;
+            var text = Clipboard.GetText(TextDataFormat.UnicodeText);
+            if (string.IsNullOrWhiteSpace(text))
+                text = Clipboard.GetText(TextDataFormat.Text);
+            if (string.IsNullOrWhiteSpace(text))
+                return false;
+
+            // Always intercept when multi-line or multi-field so paste fills rows, not "runs".
+            if (!LooksLikeBulkClipboard(text))
+                return false;
+
+            FillBulkGridFromText(text, sourceLabel: "paste");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            ErrText.Text = "Paste failed: " + ex.Message;
+            return true;
+        }
+    }
+
+    static bool LooksLikeBulkClipboard(string text)
+    {
+        var t = text.Replace("\r\n", "\n").Replace('\r', '\n').TrimEnd();
+        if (t.Contains('\n'))
+            return true;
+        if (t.Contains('\t'))
+            return true;
+        if (t.Count(c => c == ',') >= 1)
+            return true;
+        return false;
+    }
+
+    /// <summary>Put clipboard/CSV into the grid cells. Does not validate or run jobs.</summary>
+    void FillBulkGridFromText(string text, string sourceLabel)
+    {
+        BulkGrid?.CommitEdit(DataGridEditingUnit.Cell, true);
+        BulkGrid?.CommitEdit(DataGridEditingUnit.Row, true);
+
+        var grid = BulkCloseoutParser.FillGridFromText(text, "password", extraBlankRows: 4);
+        var filled = grid.Count(r => !r.IsEmpty);
+        if (filled == 0)
+        {
+            ErrText.Text = "Nothing to put in the table.";
+            return;
+        }
+
+        _bulkGrid = grid;
+        _bulkRows = []; // clear any previous run queue — paste is edit-only
+        BindBulkGrid();
+
+        ErrText.Text = "";
+        BulkParseStatus.Text = $"{filled} row(s) filled — review Type/Password, then Run when ready.";
+        AppendLog($"\n── {sourceLabel}: filled {filled} table row(s) (not run) ──\n");
+        foreach (var r in _bulkGrid.Where(x => !x.IsEmpty).Take(25))
+        {
+            AppendLog($"  {r.Username}" +
+                      (string.IsNullOrEmpty(r.DisplayName) ? "" : $" · {r.DisplayName}") +
+                      $" · {r.TypeLabel}" +
+                      (string.IsNullOrEmpty(r.Ita) ? "" : $" · {r.Ita}") + "\n");
+        }
+    }
+
+    void BindBulkGrid()
+    {
+        if (BulkGrid is null) return;
+        BulkGrid.ItemsSource = _bulkGrid;
+        foreach (var col in BulkGrid.Columns)
+        {
+            if (col is DataGridComboBoxColumn combo)
+                combo.ItemsSource = BulkCloseoutParser.TypeLabels;
+        }
     }
 
     bool IsOpenTicketJob => RadJobOpenTicket?.IsChecked == true;
@@ -144,9 +258,8 @@ public partial class MainWindow : Window
     void BtnBulkClear_Click(object sender, RoutedEventArgs e)
     {
         _bulkGrid = BulkCloseoutParser.CreateEmptyGrid();
-        if (BulkGrid is not null)
-            BulkGrid.ItemsSource = _bulkGrid;
         _bulkRows = [];
+        BindBulkGrid();
         ErrText.Text = "";
         RefreshBulkStatusFromGrid();
     }
@@ -154,11 +267,11 @@ public partial class MainWindow : Window
     void BtnBulkSample_Click(object sender, RoutedEventArgs e)
     {
         _bulkGrid = BulkCloseoutParser.SampleGrid();
-        if (BulkGrid is not null)
-            BulkGrid.ItemsSource = _bulkGrid;
+        _bulkRows = [];
+        BindBulkGrid();
         ErrText.Text = "";
         RefreshBulkStatusFromGrid();
-        AppendLog("\n── sample rows loaded into grid ──\n");
+        AppendLog("\n── sample rows filled into table (not run) ──\n");
     }
 
     void BtnLoadCsv_Click(object sender, RoutedEventArgs e)
@@ -172,22 +285,7 @@ public partial class MainWindow : Window
         if (dlg.ShowDialog(this) != true) return;
         try
         {
-            var text = File.ReadAllText(dlg.FileName);
-            var parsed = BulkCloseoutParser.Parse(text, "password");
-            foreach (var err in parsed.Errors)
-                AppendLog("csv: " + err + "\n");
-
-            _bulkGrid = BulkCloseoutParser.ParseToGrid(text, "password");
-            if (BulkGrid is not null)
-                BulkGrid.ItemsSource = _bulkGrid;
-
-            if (parsed.HadHeader && !string.IsNullOrEmpty(parsed.DetectedColumns))
-                AppendLog($"\n── CSV headers: {parsed.DetectedColumns} ──\n");
-            AppendLog($"── loaded {parsed.Rows.Count} row(s) into grid ──\n");
-            ErrText.Text = parsed.Errors.Count > 0 && parsed.Rows.Count == 0
-                ? parsed.Errors[0]
-                : "";
-            RefreshBulkStatusFromGrid();
+            FillBulkGridFromText(File.ReadAllText(dlg.FileName), sourceLabel: "csv");
         }
         catch (Exception ex)
         {
