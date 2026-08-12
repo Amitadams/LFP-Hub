@@ -8,62 +8,45 @@ Not part of Deskside Hub.
 
 ## Requirements
 
-- Windows 10/11 with [.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0) (framework-dependent build)
-- Node.js on PATH (or the same Node layout Deskside Hub / skills use)
+- Windows 10/11 x64
+- [.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0) (x64)
+- Node.js on PATH (or Nova / skills Node layout)
 - Skills tree with `lfp-reset` (`.opencode/skills`)
+- To **build** the installer: [Inno Setup 6](https://jrsoftware.org/isinfo.php) (`winget install JRSoftware.InnoSetup`)
 
-## Install (recommended)
+## Install (end users)
 
-From a machine that can build (with sibling `../DesksideHub`):
+Download **`LfpHub-*-Setup.exe`** from [Releases](https://github.com/Amitadams/LFP-Hub/releases) and run it.
+
+- Per-user install (no admin) → `%LocalAppData%\Programs\LfpHub\`
+- Start Menu + optional Desktop shortcut
+- Uninstall from Windows **Apps & features** (or Start Menu)
+
+Do **not** run the old `install.bat` / zip PowerShell installer — that path breaks when Windows expands the zip under a temp folder with special characters.
+
+## Build Setup.exe (developers)
 
 ```powershell
+# once
+winget install JRSoftware.InnoSetup
+
+# sibling DesksideHub.Core required
 .\build-release.ps1
-.\publish\install.bat
 ```
 
-Or after unzipping a release zip that already contains `LfpHub.exe`:
+Outputs:
 
-```bat
-install.bat
-```
-
-This copies the app to:
-
-`%LocalAppData%\Programs\LfpHub\`
-
-and creates:
-
-- Start Menu → **LFP Hub**
-- Desktop shortcut (via `install.bat` / `install.ps1 -DesktopShortcut`)
-- **Open LFP Hub.bat** next to the installed exe
-
-Launch any of:
-
-- Start Menu **LFP Hub**
-- Desktop **LFP Hub**
-- `%LocalAppData%\Programs\LfpHub\LfpHub.exe`
-- `%LocalAppData%\Programs\LfpHub\Open LFP Hub.bat`
-- Repo root `Open LFP Hub.bat` (finds install, publish, or build output)
-
-Uninstall:
-
-```powershell
-& "$env:LOCALAPPDATA\Programs\LfpHub\uninstall.ps1"
-# optional: also wipe config
-& "$env:LOCALAPPDATA\Programs\LfpHub\uninstall.ps1" -RemoveConfig
-```
+| Artifact | Path |
+|----------|------|
+| App (publish) | `publish\LfpHub.exe` |
+| **Installer** | `dist\LfpHub-<ver>-Setup.exe` |
+| Portable zip | `dist\LfpHub-<ver>-win-x64-portable.zip` |
 
 ## First-time setup
 
-On first launch the app opens a **setup wizard**. Enter **your** tech identity:
+On first launch a **setup wizard** asks for **your** tech identity (display name, username, email, signature). Nothing is pre-filled from another technician.
 
-1. Display name, username, email  
-2. Site, signature title, walk-up hours  
-3. **Continue**
-
-Nothing is pre-filled from another technician. Identity is stored only under `%LocalAppData%\LfpHub\` and is never committed.
-
-You can change identity later under **Settings → Tech identity**.
+Identity lives under `%LocalAppData%\LfpHub\` only (not in the installer payload).
 
 ## Dev run
 
@@ -104,23 +87,18 @@ Dry-run is on by default.
 
 ```
 LfpHub/
-  Templates/           # Bundled reply templates (token-only, no personal names)
-  SetupWindow.*        # First-run tech identity wizard
-  AppConfig.cs         # Config + identity scrub
-  MainWindow.*         # Main UI
-  SettingsWindow.*     # Tech identity + templates
-  build-release.ps1    # Publish → ./publish + dist zip
-  install.ps1/.bat     # Per-user installer
-  uninstall.ps1
-  Open LFP Hub.bat     # Launcher (install / publish / build)
-  run-lfp-hub.bat      # Dev launcher
+  Assets/              # App icon (ICO + generator)
+  installer/LfpHub.iss # Inno Setup script
+  Templates/           # Reply templates (token-only)
+  SetupWindow.*        # First-run wizard
+  build-release.ps1    # publish + ISCC → dist\*-Setup.exe
 ```
 
-Depends on sibling `../DesksideHub/DesksideHub.Core` for job running / Node location.
+Depends on sibling `../DesksideHub/DesksideHub.Core`.
 
 ## Version
 
-**0.0.2** — app icon (LFP battery mark), first-run setup wizard, publish + per-user installer.
+**0.0.3** — Inno Setup installer (`Setup.exe`); replaces broken zip/PowerShell install path.
 
 ## License
 

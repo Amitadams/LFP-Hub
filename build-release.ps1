@@ -1,29 +1,76 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Publish LFP Hub (framework-dependent net8.0-windows) and stage installer assets.
+  Publish LFP Hub and build a Windows Setup.exe with Inno Setup 6.
 #>
 [CmdletBinding()]
 param(
     [string]$Configuration = "Release",
-    [string]$OutputDir = ""
+    [string]$OutputDir = "",
+    [string]$IsccPath = ""
 )
 
 $ErrorActionPreference = "Stop"
 $Root = $PSScriptRoot
 if (-not $OutputDir) { $OutputDir = Join-Path $Root "publish" }
 
+function Get-ProjectVersion {
+    param([string]$Csproj)
+    [xml]$proj = Get-Content -LiteralPath $Csproj
+    foreach ($pg in $proj.Project.PropertyGroup) {
+        if ($pg.Version) { return [string]$pg.Version }
+    }
+    return "0.0.0"
+}
+
+function Find-Iscc {
+    param([string]$Hint)
+    if ($Hint -and (Test-Path -LiteralPath $Hint)) { return (Resolve-Path -LiteralPath $Hint).Path }
+
+    $candidates = @(
+        (Join-Path $env:LOCALAPPDATA "Programs\Inno Setup 6\ISCC.exe"),
+        (Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"),
+        (Join-Path $env:ProgramFiles "Inno Setup 6\ISCC.exe")
+    )
+    foreach ($c in $candidates) {
+        if ($c -and (Test-Path -LiteralPath $c)) { return (Resolve-Path -LiteralPath $c).Path }
+    }
+
+    $cmd = Get-Command iscc.exe -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+
+    throw @"
+Inno Setup 6 compiler (ISCC.exe) not found.
+Install: winget install JRSoftware.InnoSetup
+Or pass -IsccPath 'C:\Path\To\ISCC.exe'
+"@
+}
+
 $csproj = Join-Path $Root "LfpHub.csproj"
-if (-not (Test-Path $csproj)) { throw "LfpHub.csproj not found at $Root" }
+if (-not (Test-Path -LiteralPath $csproj)) { throw "LfpHub.csproj not found at $Root" }
 
 $core = Join-Path $Root "..\DesksideHub\DesksideHub.Core\DesksideHub.Core.csproj"
-if (-not (Test-Path $core)) {
+if (-not (Test-Path -LiteralPath $core)) {
     throw "Sibling DesksideHub.Core not found at $core"
 }
 
-Write-Host "==> Publishing LFP Hub ($Configuration, framework-dependent)..." -ForegroundColor Cyan
-if (Test-Path $OutputDir) {
-    Remove-Item $OutputDir -Recurse -Force
+$ver = Get-ProjectVersion -Csproj $csproj
+$iss = Join-Path $Root "installer\LfpHub.iss"
+if (-not (Test-Path -LiteralPath $iss)) { throw "Missing $iss" }
+
+$ico = Join-Path $Root "Assets\LfpHub.ico"
+if (-not (Test-Path -LiteralPath $ico)) {
+    $gen = Join-Path $Root "Assets\generate-icon.ps1"
+    if (Test-Path -LiteralPath $gen) {
+        Write-Host "==> Generating app icon..." -ForegroundColor Cyan
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $gen
+    }
+}
+if (-not (Test-Path -LiteralPath $ico)) { throw "Missing Assets\LfpHub.ico" }
+
+Write-Host "==> Publishing LFP Hub v$ver ($Configuration, framework-dependent win-x64)..." -ForegroundColor Cyan
+if (Test-Path -LiteralPath $OutputDir) {
+    Remove-Item -LiteralPath $OutputDir -Recurse -Force
 }
 New-Item -ItemType Directory -Path $OutputDir -Force | Out-Null
 
@@ -38,47 +85,53 @@ dotnet publish $csproj `
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed ($LASTEXITCODE)" }
 
 $exe = Join-Path $OutputDir "LfpHub.exe"
-if (-not (Test-Path $exe)) { throw "LfpHub.exe missing after publish: $exe" }
+if (-not (Test-Path -LiteralPath $exe)) { throw "LfpHub.exe missing after publish: $exe" }
 
-# Stage installer + launcher + icon next to the published app
-Copy-Item (Join-Path $Root "install.ps1") $OutputDir -Force
-Copy-Item (Join-Path $Root "install.bat") $OutputDir -Force
-Copy-Item (Join-Path $Root "Open LFP Hub.bat") $OutputDir -Force
-Copy-Item (Join-Path $Root "uninstall.ps1") $OutputDir -Force
-$ico = Join-Path $Root "Assets\LfpHub.ico"
-if (Test-Path $ico) {
-    Copy-Item $ico $OutputDir -Force
-    $assetsOut = Join-Path $OutputDir "Assets"
-    New-Item -ItemType Directory -Path $assetsOut -Force | Out-Null
-    Copy-Item $ico (Join-Path $assetsOut "LfpHub.ico") -Force
-}
-
-# Read version from csproj for zip name
-$ver = "0.0.0"
-try {
-    [xml]$proj = Get-Content $csproj
-    $v = $proj.Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1
-    if ($v) { $ver = [string]$v }
-} catch { }
+# Icon next to published exe (also packed by Inno)
+Copy-Item -LiteralPath $ico -Destination (Join-Path $OutputDir "LfpHub.ico") -Force
 
 $dist = Join-Path $Root "dist"
-if (Test-Path $dist) { Remove-Item $dist -Recurse -Force }
-New-Item -ItemType Directory -Path $dist -Force | Out-Null
+if (-not (Test-Path -LiteralPath $dist)) {
+    New-Item -ItemType Directory -Path $dist -Force | Out-Null
+}
 
-$zipName = "LfpHub-$ver-win-x64.zip"
+$iscc = Find-Iscc -Hint $IsccPath
+Write-Host "==> Building Setup.exe with Inno Setup..." -ForegroundColor Cyan
+Write-Host "    ISCC: $iscc"
+
+$sourceDir = (Resolve-Path -LiteralPath $OutputDir).Path
+$outDir = (Resolve-Path -LiteralPath $dist).Path
+
+& $iscc `
+    "/DMyAppVersion=$ver" `
+    "/DSourceDir=$sourceDir" `
+    "/DOutputDir=$outDir" `
+    $iss
+if ($LASTEXITCODE -ne 0) { throw "ISCC failed ($LASTEXITCODE)" }
+
+$setupName = "LfpHub-$ver-Setup.exe"
+$setupPath = Join-Path $dist $setupName
+if (-not (Test-Path -LiteralPath $setupPath)) {
+    # Fallback: newest Setup.exe in dist
+    $setupPath = Get-ChildItem -LiteralPath $dist -Filter "LfpHub-*-Setup.exe" |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1 -ExpandProperty FullName
+}
+if (-not $setupPath -or -not (Test-Path -LiteralPath $setupPath)) {
+    throw "Setup.exe not produced in $dist"
+}
+
+# Optional portable zip (app only, no PowerShell installer)
+$zipName = "LfpHub-$ver-win-x64-portable.zip"
 $zipPath = Join-Path $dist $zipName
-if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
+if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force }
 Compress-Archive -Path (Join-Path $OutputDir "*") -DestinationPath $zipPath -Force
 
-# Convenience copies at repo root / dist for double-click install
-Copy-Item (Join-Path $Root "install.bat") $dist -Force
-Copy-Item (Join-Path $Root "Open LFP Hub.bat") $dist -Force
-
 Write-Host ""
-Write-Host "Publish OK  v$ver" -ForegroundColor Green
-Write-Host "  App:       $exe"
-Write-Host "  Installer: $(Join-Path $OutputDir 'install.bat')"
-Write-Host "  Zip:       $zipPath"
+Write-Host "Build OK  v$ver" -ForegroundColor Green
+Write-Host "  App:     $exe"
+Write-Host "  Setup:   $setupPath"
+Write-Host "  Portable zip (optional): $zipPath"
 Write-Host ""
-Write-Host "Next:  .\publish\install.bat" -ForegroundColor Yellow
-Write-Host "   or: .\publish\install.ps1 -DesktopShortcut"
+Write-Host "Install:  double-click $setupName" -ForegroundColor Yellow
+Write-Host "Requires: .NET 8 Desktop Runtime (x64)"

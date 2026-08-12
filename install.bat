@@ -2,33 +2,26 @@
 setlocal EnableExtensions
 cd /d "%~dp0"
 
-set "PS1=%~dp0install.ps1"
-if not exist "%PS1%" (
-  echo install.ps1 not found next to this script.
-  pause
-  exit /b 1
-)
-
-REM Prefer published app beside this bat, else .\publish
-set "SRC="
-if exist "%~dp0LfpHub.exe" set "SRC=%~dp0"
-if not defined SRC if exist "%~dp0publish\LfpHub.exe" set "SRC=%~dp0publish\"
-
-if defined SRC (
-  powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PS1%" -SourceDir "%SRC%" -DesktopShortcut %*
-) else (
-  powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PS1%" -DesktopShortcut %*
-)
-
-set "ERR=%ERRORLEVEL%"
-if not "%ERR%"=="0" (
-  echo Install failed with exit %ERR%.
-  pause
-  exit /b %ERR%
-)
-
+REM Legacy entry point — real installs use Inno Setup (dist\LfpHub-*-Setup.exe).
 echo.
-echo Done. Use Start Menu "LFP Hub", Desktop shortcut, or:
-echo   %%LocalAppData%%\Programs\LfpHub\Open LFP Hub.bat
+echo LFP Hub no longer uses install.bat / PowerShell for setup.
+echo That path breaks when Windows unzips under a temp folder.
 echo.
-exit /b 0
+echo Use the Windows installer instead:
+echo   dist\LfpHub-*-Setup.exe
+echo.
+echo Build it with:
+echo   powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0build-release.ps1"
+echo.
+
+set "SETUP="
+for %%F in ("%~dp0dist\LfpHub-*-Setup.exe") do set "SETUP=%%~fF"
+if defined SETUP if exist "%SETUP%" (
+  echo Launching: %SETUP%
+  start "" "%SETUP%"
+  exit /b 0
+)
+
+echo No Setup.exe found yet. Run build-release.ps1 first.
+pause
+exit /b 1
