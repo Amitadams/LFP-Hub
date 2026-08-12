@@ -98,6 +98,8 @@ Depends on sibling `../DesksideHub/DesksideHub.Core`.
 
 ## Version
 
+**0.0.11** — Bulk close-out is a headered table (Username, Display Name, Password, ITA Number, Type). No release pushed until requested.
+
 **0.0.10** — Bulk CSV headers: Username, Password, Name, Ticket Type, Badge (per-row types).
 
 **0.0.9** — Close-out type **No account** (refer to LFP provisioning; no OTP).

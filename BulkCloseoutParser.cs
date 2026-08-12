@@ -1,19 +1,84 @@
+using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.IO;
+using System.Runtime.CompilerServices;
 using System.Text;
 
 namespace LfpHub;
 
-/// <summary>One bulk close-out row with optional per-row ticket type.</summary>
+/// <summary>Editable bulk grid row (bound to DataGrid).</summary>
+public sealed class BulkGridRow : INotifyPropertyChanged
+{
+    string _username = "";
+    string _displayName = "";
+    string _password = "";
+    string _ita = "";
+    string _typeLabel = "Password";
+
+    public string Username
+    {
+        get => _username;
+        set { if (_username == value) return; _username = value ?? ""; OnPropertyChanged(); }
+    }
+
+    public string DisplayName
+    {
+        get => _displayName;
+        set { if (_displayName == value) return; _displayName = value ?? ""; OnPropertyChanged(); }
+    }
+
+    public string Password
+    {
+        get => _password;
+        set { if (_password == value) return; _password = value ?? ""; OnPropertyChanged(); }
+    }
+
+    public string Ita
+    {
+        get => _ita;
+        set { if (_ita == value) return; _ita = value ?? ""; OnPropertyChanged(); }
+    }
+
+    /// <summary>UI label: Password, First login, MFA, No account.</summary>
+    public string TypeLabel
+    {
+        get => _typeLabel;
+        set
+        {
+            var v = string.IsNullOrWhiteSpace(value) ? "Password" : value.Trim();
+            if (_typeLabel == v) return;
+            _typeLabel = v;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(Mode));
+        }
+    }
+
+    public string Mode => BulkCloseoutParser.NormalizeMode(TypeLabel) ?? "password";
+
+    public string ModeLabel => BulkCloseoutParser.ModeLabel(Mode);
+
+    public bool IsEmpty =>
+        string.IsNullOrWhiteSpace(Username)
+        && string.IsNullOrWhiteSpace(DisplayName)
+        && string.IsNullOrWhiteSpace(Password)
+        && string.IsNullOrWhiteSpace(Ita);
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    void OnPropertyChanged([CallerMemberName] string? name = null) =>
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+}
+
+/// <summary>Validated row ready to run.</summary>
 public sealed class BulkCloseoutRow
 {
     public required string Username { get; init; }
     public string TempPassword { get; init; } = "";
     public string Name { get; init; } = "";
     public string Badge { get; init; } = "";
-    /// <summary>password | setup | mfa | noaccount</summary>
+    public string Ita { get; init; } = "";
     public required string Mode { get; init; }
     public int LineNumber { get; init; }
-
     public string ModeLabel => BulkCloseoutParser.ModeLabel(Mode);
 }
 
@@ -26,23 +91,138 @@ public sealed class BulkParseResult
 }
 
 /// <summary>
-/// Parse bulk close-out lists from CSV or free text.
-/// Preferred header:
-///   Username,Password,Name,Ticket Type,Badge
-/// Ticket Type: Password | First login | MFA | No account
-/// Without a type column, defaultMode is used for every row.
+/// Parse bulk close-out lists from CSV or free text into grid rows / run rows.
+/// Headers: Username, Display Name, Password, ITA Number, Type
+/// Type: Password | First login | MFA | No account
 /// </summary>
 public static class BulkCloseoutParser
 {
-    public const string SampleCsv =
-        "Username,Password,Name,Ticket Type,Badge\r\n" +
-        "jdoe,OneTimeP@ss14,Jane Doe,Password,\r\n" +
-        "pdeyo,,Parker Deyo,MFA,702960\r\n" +
-        "asmith,,,No account,\r\n";
+    public static readonly string[] TypeLabels =
+    [
+        "Password",
+        "First login",
+        "MFA",
+        "No account",
+    ];
 
-    /// <param name="defaultMode">Used when a row has no Ticket Type column/value.</param>
+    public const string SampleCsv =
+        "Username,Display Name,Password,ITA Number,Type\r\n" +
+        "jdoe,Jane Doe,OneTimeP@ss14,,Password\r\n" +
+        "pdeyo,Parker Deyo,,,MFA\r\n" +
+        "asmith,Alex Smith,,,No account\r\n";
+
+    public static ObservableCollection<BulkGridRow> CreateEmptyGrid(int blankRows = 8)
+    {
+        var list = new ObservableCollection<BulkGridRow>();
+        for (var i = 0; i < blankRows; i++)
+            list.Add(new BulkGridRow());
+        return list;
+    }
+
+    public static ObservableCollection<BulkGridRow> SampleGrid()
+    {
+        var list = new ObservableCollection<BulkGridRow>
+        {
+            new()
+            {
+                Username = "jdoe",
+                DisplayName = "Jane Doe",
+                Password = "OneTimeP@ss14",
+                TypeLabel = "Password",
+            },
+            new()
+            {
+                Username = "pdeyo",
+                DisplayName = "Parker Deyo",
+                TypeLabel = "MFA",
+            },
+            new()
+            {
+                Username = "asmith",
+                DisplayName = "Alex Smith",
+                TypeLabel = "No account",
+            },
+        };
+        // Extra blank rows for typing
+        for (var i = 0; i < 5; i++)
+            list.Add(new BulkGridRow());
+        return list;
+    }
+
+    public static BulkParseResult ValidateGrid(IEnumerable<BulkGridRow> gridRows)
+    {
+        var result = new BulkParseResult();
+        var n = 0;
+        foreach (var g in gridRows)
+        {
+            n++;
+            if (g.IsEmpty) continue;
+
+            var user = NormalizeUsername(g.Username);
+            if (string.IsNullOrWhiteSpace(user))
+            {
+                result.Errors.Add($"Row {n}: username is required.");
+                continue;
+            }
+
+            var mode = NormalizeMode(g.TypeLabel) ?? "password";
+            var pass = (g.Password ?? "").Trim();
+            var needsPass = TemplateFiles.NeedsTempPassword(mode);
+
+            if (needsPass)
+            {
+                if (string.IsNullOrWhiteSpace(pass) || pass.Length < 8)
+                {
+                    result.Errors.Add($"Row {n} ({user}): {ModeLabel(mode)} needs password (8+).");
+                    continue;
+                }
+                if (pass.Contains("007.teslamotors.com", StringComparison.OrdinalIgnoreCase))
+                {
+                    result.Errors.Add($"Row {n} ({user}): use one-time password, not a 007 link.");
+                    continue;
+                }
+            }
+
+            var ita = NormalizeIta(g.Ita);
+            result.Rows.Add(new BulkCloseoutRow
+            {
+                Username = user,
+                TempPassword = needsPass ? pass : "",
+                Name = (g.DisplayName ?? "").Trim(),
+                Ita = ita,
+                Mode = mode,
+                LineNumber = n,
+            });
+        }
+        return result;
+    }
+
+    /// <param name="defaultMode">Used when a row has no Type value.</param>
     public static BulkParseResult Parse(string text, string defaultMode = "password") =>
         ParseLines(SplitLines(text), defaultMode);
+
+    public static ObservableCollection<BulkGridRow> ParseToGrid(string text, string defaultMode = "password")
+    {
+        var parsed = Parse(text, defaultMode);
+        var list = new ObservableCollection<BulkGridRow>();
+        foreach (var r in parsed.Rows)
+        {
+            list.Add(new BulkGridRow
+            {
+                Username = r.Username,
+                DisplayName = r.Name,
+                Password = r.TempPassword,
+                Ita = r.Ita,
+                TypeLabel = ModeLabel(r.Mode),
+            });
+        }
+        // Keep a few blank rows for more entry
+        for (var i = 0; i < 3; i++)
+            list.Add(new BulkGridRow());
+        if (list.Count == 0)
+            return CreateEmptyGrid();
+        return list;
+    }
 
     public static BulkParseResult ParseFile(string path, string defaultMode = "password") =>
         Parse(File.ReadAllText(path), defaultMode);
@@ -62,7 +242,7 @@ public static class BulkCloseoutParser
         var list = lines.ToList();
         var start = 0;
         var hasHeader = false;
-        int userCol = 0, passCol = -1, nameCol = -1, badgeCol = -1, typeCol = -1;
+        int userCol = 0, passCol = -1, nameCol = -1, badgeCol = -1, typeCol = -1, itaCol = -1;
 
         if (list.Count > 0)
         {
@@ -75,13 +255,15 @@ public static class BulkCloseoutParser
                     "username", "user", "login", "samaccountname", "uid", "account");
                 passCol = IndexOfHeader(first,
                     "password", "temp", "otp", "onetimepassword", "temp_password",
-                    "temporary", "temppassword", "onetimepassword");
+                    "temporary", "temppassword");
                 nameCol = IndexOfHeader(first,
-                    "name", "fullname", "display", "displayname", "fullname", "fullname");
+                    "displayname", "display name", "name", "fullname", "display", "fullname");
                 badgeCol = IndexOfHeader(first,
                     "badge", "badgenumber", "emp", "employee");
+                itaCol = IndexOfHeader(first,
+                    "itanumber", "ita", "ticket", "ticketnumber", "ticketkey", "key");
                 typeCol = IndexOfHeader(first,
-                    "tickettype", "type", "mode", "job", "ticket",
+                    "tickettype", "type", "mode", "job",
                     "closeout", "closeouttype", "requesttype");
 
                 if (userCol < 0) userCol = 0;
@@ -105,6 +287,7 @@ public static class BulkCloseoutParser
             string name = "";
             string badge = "";
             string typeRaw = "";
+            string ita = "";
 
             if (hasHeader)
             {
@@ -113,10 +296,10 @@ public static class BulkCloseoutParser
                 if (nameCol >= 0) name = Get(fields, nameCol);
                 if (badgeCol >= 0) badge = Get(fields, badgeCol);
                 if (typeCol >= 0) typeRaw = Get(fields, typeCol);
+                if (itaCol >= 0) ita = Get(fields, itaCol);
             }
             else if (fields.Count >= 2)
             {
-                // Positional: username, password|type [, name] [, type|badge] ...
                 user = fields[0];
                 var second = fields[1];
                 var secondMode = NormalizeMode(second);
@@ -124,7 +307,6 @@ public static class BulkCloseoutParser
                 {
                     typeRaw = second;
                     if (fields.Count >= 3) name = fields[2];
-                    if (fields.Count >= 4) badge = fields[3];
                 }
                 else
                 {
@@ -147,8 +329,6 @@ public static class BulkCloseoutParser
                         else
                             badge = fields[3];
                     }
-                    if (fields.Count >= 5 && string.IsNullOrEmpty(badge))
-                        badge = fields[4];
                 }
             }
             else
@@ -160,17 +340,18 @@ public static class BulkCloseoutParser
             pass = pass.Trim().Trim('"');
             name = name.Trim().Trim('"');
             badge = badge.Trim().Trim('"');
+            ita = NormalizeIta(ita);
 
-            if (string.IsNullOrWhiteSpace(user))
+            if (string.IsNullOrWhiteSpace(user) && string.IsNullOrWhiteSpace(ita))
             {
-                result.Errors.Add($"Line {lineNo}: missing username.");
+                result.Errors.Add($"Line {lineNo}: username or ITA required.");
                 continue;
             }
 
             if (!string.IsNullOrWhiteSpace(typeRaw) && NormalizeMode(typeRaw) is null)
             {
                 result.Errors.Add(
-                    $"Line {lineNo} ({user}): unknown ticket type '{typeRaw}'. " +
+                    $"Line {lineNo}: unknown type '{typeRaw}'. " +
                     "Use Password, First login, MFA, or No account.");
                 continue;
             }
@@ -193,16 +374,13 @@ public static class BulkCloseoutParser
                 }
             }
 
-            result.Rows.RemoveAll(r =>
-                string.Equals(r.Username, user, StringComparison.OrdinalIgnoreCase)
-                && string.Equals(r.Mode, mode, StringComparison.OrdinalIgnoreCase));
-
             result.Rows.Add(new BulkCloseoutRow
             {
                 Username = user,
                 TempPassword = needsPass ? pass : "",
                 Name = name,
                 Badge = badge,
+                Ita = ita,
                 Mode = mode,
                 LineNumber = lineNo,
             });
@@ -211,7 +389,6 @@ public static class BulkCloseoutParser
         return result;
     }
 
-    /// <summary>Map free text to mode id, or null if unknown.</summary>
     public static string? NormalizeMode(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw)) return null;
@@ -247,6 +424,15 @@ public static class BulkCloseoutParser
         _ => "Password",
     };
 
+    public static string NormalizeIta(string? raw)
+    {
+        var s = (raw ?? "").Trim();
+        if (s.Length == 0) return "";
+        var m = System.Text.RegularExpressions.Regex.Match(s, @"ITA-\d+",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        return m.Success ? m.Value.ToUpperInvariant() : s;
+    }
+
     static bool LooksLikePassword(string s) =>
         s.Length >= 8 && (s.Any(char.IsDigit) || s.Any(c => !char.IsLetterOrDigit(c)));
 
@@ -261,7 +447,9 @@ public static class BulkCloseoutParser
                || joined.Contains("name")
                || joined.Contains("type")
                || joined.Contains("ticket")
-               || joined.Contains("badge");
+               || joined.Contains("badge")
+               || joined.Contains("ita")
+               || joined.Contains("display");
     }
 
     static int IndexOfHeader(List<string> fields, params string[] names)

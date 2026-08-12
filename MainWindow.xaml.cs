@@ -1,6 +1,8 @@
+using System.Collections.ObjectModel;
 using System.IO;
 using System.Text.RegularExpressions;
 using System.Windows;
+using System.Windows.Controls;
 using DesksideHub.Models;
 using DesksideHub.Platform;
 using DesksideHub.Services;
@@ -13,6 +15,7 @@ public partial class MainWindow : Window
     readonly JobRunner _runner = new();
     readonly string? _nodeExe;
     readonly string? _skillsRoot;
+    ObservableCollection<BulkGridRow> _bulkGrid = BulkCloseoutParser.CreateEmptyGrid();
     List<BulkCloseoutRow> _bulkRows = [];
     bool _bulkCancel;
 
@@ -26,36 +29,33 @@ public partial class MainWindow : Window
         _runner.OutputReceived += line => Dispatcher.Invoke(() => AppendLog(RedactSecrets(line)));
         _runner.StatusChanged += msg => Dispatcher.Invoke(() => StatusText.Text = msg);
 
-        InitBulkDefaultTypeCombo();
+        InitBulkGrid();
         RefreshStatusReady();
         UpdateJobUi();
         TxtUsername.Focus();
     }
 
-    void InitBulkDefaultTypeCombo()
+    void InitBulkGrid()
     {
-        if (CmbBulkDefaultType is null) return;
-        CmbBulkDefaultType.Items.Clear();
-        CmbBulkDefaultType.Items.Add(new BulkTypeItem("password", "Password"));
-        CmbBulkDefaultType.Items.Add(new BulkTypeItem("setup", "First login"));
-        CmbBulkDefaultType.Items.Add(new BulkTypeItem("mfa", "MFA"));
-        CmbBulkDefaultType.Items.Add(new BulkTypeItem("noaccount", "No account"));
-        CmbBulkDefaultType.SelectedIndex = 0;
-        CmbBulkDefaultType.DisplayMemberPath = nameof(BulkTypeItem.Label);
+        if (BulkGrid is null) return;
+        _bulkGrid = BulkCloseoutParser.CreateEmptyGrid();
+        BulkGrid.ItemsSource = _bulkGrid;
+        // Type column combo items
+        foreach (var col in BulkGrid.Columns)
+        {
+            if (col is DataGridComboBoxColumn combo)
+                combo.ItemsSource = BulkCloseoutParser.TypeLabels;
+        }
+        RefreshBulkStatusFromGrid();
     }
 
-    sealed class BulkTypeItem(string mode, string label)
+    void RefreshBulkStatusFromGrid()
     {
-        public string Mode { get; } = mode;
-        public string Label { get; } = label;
-        public override string ToString() => Label;
-    }
-
-    string BulkDefaultMode()
-    {
-        if (CmbBulkDefaultType?.SelectedItem is BulkTypeItem item)
-            return item.Mode;
-        return CurrentCloseoutMode();
+        if (BulkParseStatus is null) return;
+        var filled = _bulkGrid.Count(r => !r.IsEmpty);
+        BulkParseStatus.Text = filled == 0
+            ? "Enter rows in the table, or Load CSV…"
+            : $"{filled} row(s) entered — Run validates and starts.";
     }
 
     bool IsOpenTicketJob => RadJobOpenTicket?.IsChecked == true;
@@ -103,13 +103,13 @@ public partial class MainWindow : Window
         OpenTicketPanel.Visibility = openTicket ? Visibility.Visible : Visibility.Collapsed;
         OpenTicketOptionsPanel.Visibility = openTicket ? Visibility.Visible : Visibility.Collapsed;
 
-        // Type radios only for single close-out (bulk uses Default type + per-row Ticket Type)
+        // Type radios only for single close-out (bulk uses per-row Type column)
         CloseoutTypePanel.Visibility = (!openTicket && !bulk) ? Visibility.Visible : Visibility.Collapsed;
         CloseoutOptionsPanel.Visibility = (!openTicket) ? Visibility.Visible : Visibility.Collapsed;
 
         if (openTicket || bulk)
         {
-            // Bulk: OTP comes from each row — hide single OTP field
+            // Bulk: OTP is a grid column — hide single OTP field
             TempPanel.Visibility = Visibility.Collapsed;
         }
         else
@@ -119,10 +119,8 @@ public partial class MainWindow : Window
                 : Visibility.Collapsed;
         }
 
-        if (bulk && BulkParseStatus is not null && _bulkRows.Count == 0
-            && (string.IsNullOrWhiteSpace(BulkParseStatus.Text)
-                || BulkParseStatus.Text.StartsWith("Paste", StringComparison.Ordinal)))
-            BulkParseStatus.Text = "Paste CSV with headers, or Sample → Parse.";
+        if (bulk)
+            RefreshBulkStatusFromGrid();
     }
 
     bool NeedsTempForCurrentMode() =>
@@ -137,65 +135,63 @@ public partial class MainWindow : Window
         RefreshStatusReady();
     }
 
+    void BtnBulkAddRow_Click(object sender, RoutedEventArgs e)
+    {
+        _bulkGrid.Add(new BulkGridRow());
+        RefreshBulkStatusFromGrid();
+    }
+
+    void BtnBulkClear_Click(object sender, RoutedEventArgs e)
+    {
+        _bulkGrid = BulkCloseoutParser.CreateEmptyGrid();
+        if (BulkGrid is not null)
+            BulkGrid.ItemsSource = _bulkGrid;
+        _bulkRows = [];
+        ErrText.Text = "";
+        RefreshBulkStatusFromGrid();
+    }
+
     void BtnBulkSample_Click(object sender, RoutedEventArgs e)
     {
-        TxtBulk.Text = BulkCloseoutParser.SampleCsv;
-        ApplyBulkParse(BulkCloseoutParser.Parse(TxtBulk.Text, BulkDefaultMode()));
+        _bulkGrid = BulkCloseoutParser.SampleGrid();
+        if (BulkGrid is not null)
+            BulkGrid.ItemsSource = _bulkGrid;
+        ErrText.Text = "";
+        RefreshBulkStatusFromGrid();
+        AppendLog("\n── sample rows loaded into grid ──\n");
     }
 
     void BtnLoadCsv_Click(object sender, RoutedEventArgs e)
     {
         var dlg = new OpenFileDialog
         {
-            Title = "Load bulk close-out list",
+            Title = "Load bulk close-out CSV",
             Filter = "CSV or text (*.csv;*.txt)|*.csv;*.txt|All files (*.*)|*.*",
             CheckFileExists = true,
         };
         if (dlg.ShowDialog(this) != true) return;
         try
         {
-            TxtBulk.Text = File.ReadAllText(dlg.FileName);
-            ApplyBulkParse(BulkCloseoutParser.Parse(TxtBulk.Text, BulkDefaultMode()));
+            var text = File.ReadAllText(dlg.FileName);
+            var parsed = BulkCloseoutParser.Parse(text, "password");
+            foreach (var err in parsed.Errors)
+                AppendLog("csv: " + err + "\n");
+
+            _bulkGrid = BulkCloseoutParser.ParseToGrid(text, "password");
+            if (BulkGrid is not null)
+                BulkGrid.ItemsSource = _bulkGrid;
+
+            if (parsed.HadHeader && !string.IsNullOrEmpty(parsed.DetectedColumns))
+                AppendLog($"\n── CSV headers: {parsed.DetectedColumns} ──\n");
+            AppendLog($"── loaded {parsed.Rows.Count} row(s) into grid ──\n");
+            ErrText.Text = parsed.Errors.Count > 0 && parsed.Rows.Count == 0
+                ? parsed.Errors[0]
+                : "";
+            RefreshBulkStatusFromGrid();
         }
         catch (Exception ex)
         {
             ErrText.Text = ex.Message;
-        }
-    }
-
-    void BtnParseBulk_Click(object sender, RoutedEventArgs e) =>
-        ApplyBulkParse(BulkCloseoutParser.Parse(TxtBulk.Text, BulkDefaultMode()));
-
-    void ApplyBulkParse(BulkParseResult parsed)
-    {
-        _bulkRows = parsed.Rows;
-        foreach (var err in parsed.Errors)
-            AppendLog("parse: " + err + "\n");
-
-        if (_bulkRows.Count == 0)
-        {
-            BulkParseStatus.Text = parsed.Errors.Count > 0
-                ? $"{parsed.Errors.Count} error(s), 0 rows"
-                : "No rows found";
-            ErrText.Text = parsed.Errors.Count > 0 ? parsed.Errors[0] : "No bulk rows to run.";
-            return;
-        }
-
-        ErrText.Text = "";
-        var byType = _bulkRows.GroupBy(r => r.ModeLabel)
-            .Select(g => $"{g.Count()} {g.Key}")
-            .ToList();
-        var summary = string.Join(" · ", byType);
-        BulkParseStatus.Text = parsed.Errors.Count > 0
-            ? $"{_bulkRows.Count} ready ({summary}) · {parsed.Errors.Count} skipped"
-            : $"{_bulkRows.Count} ready · {summary}";
-        if (parsed.HadHeader && !string.IsNullOrEmpty(parsed.DetectedColumns))
-            AppendLog($"\n── headers: {parsed.DetectedColumns} ──\n");
-        AppendLog($"── bulk parse: {_bulkRows.Count} row(s) ──\n");
-        foreach (var r in _bulkRows)
-        {
-            var extra = string.IsNullOrEmpty(r.Name) ? "" : $" · {r.Name}";
-            AppendLog($"  {r.Username} · {r.ModeLabel}{extra}\n");
         }
     }
 
@@ -269,11 +265,32 @@ public partial class MainWindow : Window
             return;
         }
 
-        // Re-parse so edits since last Parse are included
-        var parsed = BulkCloseoutParser.Parse(TxtBulk.Text, BulkDefaultMode());
-        ApplyBulkParse(parsed);
+        // Commit any in-cell edits before validate
+        BulkGrid?.CommitEdit(DataGridEditingUnit.Cell, true);
+        BulkGrid?.CommitEdit(DataGridEditingUnit.Row, true);
+
+        var parsed = BulkCloseoutParser.ValidateGrid(_bulkGrid);
+        foreach (var err in parsed.Errors)
+            AppendLog("validate: " + err + "\n");
+        _bulkRows = parsed.Rows;
+
         if (_bulkRows.Count == 0)
+        {
+            ErrText.Text = parsed.Errors.Count > 0
+                ? parsed.Errors[0]
+                : "No bulk rows to run. Fill Username and Type (and Password when needed).";
+            BulkParseStatus.Text = parsed.Errors.Count > 0
+                ? $"{parsed.Errors.Count} error(s), 0 ready"
+                : "No rows ready";
             return;
+        }
+
+        var byType = _bulkRows.GroupBy(r => r.ModeLabel)
+            .Select(g => $"{g.Count()} {g.Key}")
+            .ToList();
+        BulkParseStatus.Text = parsed.Errors.Count > 0
+            ? $"{_bulkRows.Count} ready · {string.Join(" · ", byType)} · {parsed.Errors.Count} skipped"
+            : $"{_bulkRows.Count} ready · {string.Join(" · ", byType)}";
 
         var templatesDir = AppConfig.ResolveTemplatesDir(cfg);
         foreach (var mode in _bulkRows.Select(r => r.Mode).Distinct())
@@ -308,6 +325,10 @@ public partial class MainWindow : Window
         AppendLog(dry
             ? $"\n── bulk dry-run · {_bulkRows.Count} ──\n"
             : $"\n── bulk LIVE · {_bulkRows.Count} ──\n");
+        foreach (var r in _bulkRows)
+            AppendLog($"  {r.Username} · {r.ModeLabel}" +
+                      (string.IsNullOrEmpty(r.Name) ? "" : $" · {r.Name}") +
+                      (string.IsNullOrEmpty(r.Ita) ? "" : $" · {r.Ita}") + "\n");
 
         try
         {
@@ -328,7 +349,7 @@ public partial class MainWindow : Window
                     row.Mode,
                     templatesDir,
                     username: row.Username,
-                    ita: "",
+                    ita: row.Ita,
                     name: row.Name,
                     badge: row.Badge,
                     temp: TemplateFiles.NeedsTempPassword(row.Mode) ? row.TempPassword : "");

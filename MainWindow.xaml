@@ -105,32 +105,62 @@
 
             <StackPanel x:Name="BulkPanel" Margin="0,4,0,0" Visibility="Collapsed">
               <TextBlock Style="{StaticResource HintText}" Margin="0,0,0,8" TextWrapping="Wrap"
-                         Text="CSV or paste with headers. Columns: Username, Password, Name, Ticket Type, Badge. Ticket Type per row: Password, First login, MFA, No account. Rows without a type use Default type below."/>
-              <Grid Margin="0,0,0,8">
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="Auto"/>
-                  <ColumnDefinition Width="*"/>
-                  <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                <TextBlock Style="{StaticResource FieldLabel}" Text="Default type" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                <ComboBox x:Name="CmbBulkDefaultType" Grid.Column="1" MaxWidth="200" HorizontalAlignment="Left"
-                          SelectedIndex="0" Padding="8,6"/>
-                <StackPanel Grid.Column="2" Orientation="Horizontal">
+                         Text="Edit the table below. Type per row: Password, First login, MFA, or No account. Load CSV fills the same columns. Password is required only for Password / First login."/>
+              <DockPanel Margin="0,0,0,8">
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                  <Button Content="Add row" Click="BtnBulkAddRow_Click"
+                          Style="{StaticResource GhostButton}" Padding="12,6" Margin="0,0,8,0"/>
+                  <Button Content="Clear" Click="BtnBulkClear_Click"
+                          Style="{StaticResource GhostButton}" Padding="12,6" Margin="0,0,8,0"/>
                   <Button Content="Sample" Click="BtnBulkSample_Click"
                           Style="{StaticResource GhostButton}" Padding="12,6" Margin="0,0,8,0"
-                          ToolTip="Insert a sample CSV with headers"/>
+                          ToolTip="Fill sample rows"/>
                   <Button Content="Load CSV…" Click="BtnLoadCsv_Click"
-                          Style="{StaticResource GhostButton}" Padding="12,6" Margin="0,0,8,0"/>
-                  <Button Content="Parse" Click="BtnParseBulk_Click"
                           Style="{StaticResource GhostButton}" Padding="12,6"/>
                 </StackPanel>
-              </Grid>
-              <TextBlock x:Name="BulkParseStatus" Style="{StaticResource HintText}" Margin="0,0,0,6"/>
-              <TextBox x:Name="TxtBulk" AcceptsReturn="True" TextWrapping="NoWrap"
-                       Height="150" VerticalScrollBarVisibility="Auto"
-                       HorizontalScrollBarVisibility="Auto"
-                       FontFamily="{StaticResource MonoFont}" FontSize="12.5"
-                       AcceptsTab="True"/>
+                <TextBlock x:Name="BulkParseStatus" Style="{StaticResource HintText}"
+                           VerticalAlignment="Center"/>
+              </DockPanel>
+              <DataGrid x:Name="BulkGrid"
+                        AutoGenerateColumns="False"
+                        CanUserAddRows="True"
+                        CanUserDeleteRows="True"
+                        CanUserResizeRows="False"
+                        HeadersVisibility="Column"
+                        GridLinesVisibility="Horizontal"
+                        AlternatingRowBackground="{StaticResource PanelAltBrush}"
+                        Background="{StaticResource InputBgBrush}"
+                        Foreground="{StaticResource TextBrush}"
+                        BorderBrush="{StaticResource BorderBrushKey}"
+                        BorderThickness="1"
+                        RowHeaderWidth="0"
+                        MinHeight="200"
+                        MaxHeight="320"
+                        FontSize="13"
+                        SelectionUnit="Cell"
+                        ClipboardCopyMode="IncludeHeader">
+                <DataGrid.Columns>
+                  <DataGridTextColumn Header="Username" Binding="{Binding Username, UpdateSourceTrigger=PropertyChanged}" Width="1.1*"/>
+                  <DataGridTextColumn Header="Display Name" Binding="{Binding DisplayName, UpdateSourceTrigger=PropertyChanged}" Width="1.3*"/>
+                  <DataGridTextColumn Header="Password" Binding="{Binding Password, UpdateSourceTrigger=PropertyChanged}" Width="1.2*"/>
+                  <DataGridTextColumn Header="ITA Number" Binding="{Binding Ita, UpdateSourceTrigger=PropertyChanged}" Width="*"/>
+                  <DataGridComboBoxColumn Header="Type"
+                                         SelectedItemBinding="{Binding TypeLabel, UpdateSourceTrigger=PropertyChanged}"
+                                         Width="1.1*">
+                    <DataGridComboBoxColumn.ElementStyle>
+                      <Style TargetType="ComboBox">
+                        <Setter Property="BorderThickness" Value="0"/>
+                        <Setter Property="Background" Value="Transparent"/>
+                      </Style>
+                    </DataGridComboBoxColumn.ElementStyle>
+                    <DataGridComboBoxColumn.EditingElementStyle>
+                      <Style TargetType="ComboBox">
+                        <Setter Property="IsEditable" Value="False"/>
+                      </Style>
+                    </DataGridComboBoxColumn.EditingElementStyle>
+                  </DataGridComboBoxColumn>
+                </DataGrid.Columns>
+              </DataGrid>
             </StackPanel>
 
             <StackPanel x:Name="OpenTicketPanel" Margin="0,4,0,0" Visibility="Collapsed">

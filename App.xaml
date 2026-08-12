@@ -277,6 +277,50 @@
       <Setter Property="Padding" Value="10,8"/>
     </Style>
 
+    <Style TargetType="DataGrid">
+      <Setter Property="Background" Value="{StaticResource InputBgBrush}"/>
+      <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource BorderBrushKey}"/>
+      <Setter Property="RowBackground" Value="{StaticResource InputBgBrush}"/>
+      <Setter Property="HorizontalGridLinesBrush" Value="{StaticResource BorderBrushKey}"/>
+      <Setter Property="VerticalGridLinesBrush" Value="{StaticResource BorderBrushKey}"/>
+    </Style>
+
+    <Style TargetType="DataGridColumnHeader">
+      <Setter Property="Background" Value="{StaticResource PanelAltBrush}"/>
+      <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="Padding" Value="10,8"/>
+      <Setter Property="BorderBrush" Value="{StaticResource BorderBrushKey}"/>
+      <Setter Property="BorderThickness" Value="0,0,1,1"/>
+    </Style>
+
+    <Style TargetType="DataGridCell">
+      <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+      <Setter Property="BorderBrush" Value="Transparent"/>
+      <Setter Property="Padding" Value="6,4"/>
+      <Style.Triggers>
+        <Trigger Property="IsSelected" Value="True">
+          <Setter Property="Background" Value="{StaticResource ChipActiveBrush}"/>
+          <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+        </Trigger>
+      </Style.Triggers>
+    </Style>
+
+    <Style TargetType="DataGridRow">
+      <Setter Property="Background" Value="{StaticResource InputBgBrush}"/>
+      <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+      <Style.Triggers>
+        <Trigger Property="IsSelected" Value="True">
+          <Setter Property="Background" Value="{StaticResource ChipActiveBrush}"/>
+        </Trigger>
+        <Trigger Property="IsMouseOver" Value="True">
+          <Setter Property="Background" Value="{StaticResource PanelAltBrush}"/>
+        </Trigger>
+      </Style.Triggers>
+    </Style>
+
     <Style x:Key="Card" TargetType="Border">
       <Setter Property="Background" Value="{StaticResource PanelBrush}"/>
       <Setter Property="BorderBrush" Value="{StaticResource BorderBrushKey}"/>
