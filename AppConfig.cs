@@ -38,47 +38,8 @@ public sealed class AppConfig
 
     public static bool NeedsFirstRunSetup()
     {
-        ScrubLegacyPersonalIdentity();
         var cfg = Load();
         return !cfg.SetupComplete || !cfg.Tech.IsConfigured;
-    }
-
-    /// <summary>
-    /// Drop leftover identity that still names a blocked previous tech
-    /// so every install starts clean until the wizard runs.
-    /// </summary>
-    public static void ScrubLegacyPersonalIdentity()
-    {
-        try
-        {
-            foreach (var path in new[] { ConfigPath, TechIdentityPath })
-            {
-                if (!File.Exists(path)) continue;
-                var text = File.ReadAllText(path);
-                if (!TechIdentity.ContainsBlockedName(text)) continue;
-                File.Delete(path);
-            }
-
-            // Working templates may have been saved with a personal signature expanded.
-            if (Directory.Exists(DefaultWorkingTemplatesDir))
-            {
-                foreach (var file in Directory.EnumerateFiles(DefaultWorkingTemplatesDir, "*.md"))
-                {
-                    var body = File.ReadAllText(file);
-                    if (!TechIdentity.ContainsBlockedName(body)) continue;
-                    var name = Path.GetFileName(file);
-                    var bundled = Path.Combine(BundledTemplatesDir, name);
-                    if (File.Exists(bundled))
-                        File.Copy(bundled, file, overwrite: true);
-                    else
-                        File.Delete(file);
-                }
-            }
-        }
-        catch
-        {
-            /* best-effort */
-        }
     }
 
     public static string ResolveTemplatesDir(AppConfig? cfg = null)
@@ -126,14 +87,6 @@ public sealed class AppConfig
         }
 
         cfg.Tech ??= new TechIdentity();
-        // Never auto-fill another person's identity.
-        if (TechIdentity.ContainsBlockedName(cfg.Tech.DisplayName)
-            || TechIdentity.ContainsBlockedName(cfg.Tech.Email)
-            || TechIdentity.ContainsBlockedName(cfg.Tech.Username))
-        {
-            cfg.Tech = new TechIdentity();
-            cfg.SetupComplete = false;
-        }
 
         if (cfg.Tech.IsConfigured && !cfg.SetupComplete)
             cfg.SetupComplete = true;
@@ -173,14 +126,6 @@ public sealed class AppConfig
 
 public sealed class TechIdentity
 {
-    /// <summary>Names that must never ship as defaults or linger in local config.</summary>
-    static readonly string[] BlockedNameFragments =
-    [
-        "amity adams",
-        "amitadams",
-        "amity.adams",
-    ];
-
     public string DisplayName { get; set; } = "";
     public string Email { get; set; } = "";
     public string Username { get; set; } = "";
@@ -191,22 +136,7 @@ public sealed class TechIdentity
     [JsonIgnore]
     public bool IsConfigured =>
         !string.IsNullOrWhiteSpace(DisplayName)
-        && !string.IsNullOrWhiteSpace(Username)
-        && !ContainsBlockedName(DisplayName)
-        && !ContainsBlockedName(Username)
-        && !ContainsBlockedName(Email);
-
-    public static bool ContainsBlockedName(string? text)
-    {
-        if (string.IsNullOrWhiteSpace(text)) return false;
-        var n = text.ToLowerInvariant();
-        foreach (var frag in BlockedNameFragments)
-        {
-            if (n.Contains(frag, StringComparison.Ordinal))
-                return true;
-        }
-        return false;
-    }
+        && !string.IsNullOrWhiteSpace(Username);
 
     public string ValidationError()
     {
@@ -214,8 +144,6 @@ public sealed class TechIdentity
             return "Display name is required.";
         if (string.IsNullOrWhiteSpace(Username))
             return "Username is required.";
-        if (ContainsBlockedName(DisplayName) || ContainsBlockedName(Username) || ContainsBlockedName(Email))
-            return "Enter your own tech identity.";
         if (Username.Contains('@', StringComparison.Ordinal))
             return "Username only — no @tesla.com.";
         if (!string.IsNullOrWhiteSpace(Email)

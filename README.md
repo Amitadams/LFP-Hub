@@ -98,6 +98,8 @@ Depends on sibling `../DesksideHub/DesksideHub.Core`.
 
 ## Version
 
+**0.0.4** — first-run setup accepts any tech identity (removed accidental self-block).
+
 **0.0.3** — Inno Setup installer (`Setup.exe`); replaces broken zip/PowerShell install path.
 
 ## License

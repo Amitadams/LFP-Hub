@@ -14,7 +14,6 @@ public partial class App : Application
 
         base.OnStartup(e);
 
-        AppConfig.ScrubLegacyPersonalIdentity();
         AppConfig.EnsureWorkingTemplates();
 
         if (AppConfig.NeedsFirstRunSetup())

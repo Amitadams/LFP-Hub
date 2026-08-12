@@ -21,7 +21,7 @@
       <StackPanel>
         <TextBlock Text="Welcome to LFP Hub" FontSize="22" FontWeight="SemiBold"/>
         <TextBlock Style="{StaticResource HintText}" Margin="0,8,0,18"
-                   Text="Enter your tech identity. This appears on Teams replies and ITA notes. Nothing is pre-filled from another technician."/>
+                   Text="Enter your tech identity for Teams replies and ITA notes. Display name and username are required."/>
 
         <TextBlock Style="{StaticResource FieldLabel}" Text="Display name"/>
         <TextBox x:Name="TxtDisplayName" Margin="0,0,0,12"/>
