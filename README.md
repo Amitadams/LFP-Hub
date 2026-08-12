@@ -98,6 +98,8 @@ Depends on sibling `../DesksideHub/DesksideHub.Core`.
 
 ## Version
 
+**0.0.7** — Fix startup crash (NullReference in job UI while XAML loads).
+
 **0.0.6** — Job renamed to **Open LFP Ticket** (skill `lfp-open-ticket`).
 
 **0.0.5** — Open ticket job (create ITA with component MFA - Reset, leave open, open in browser).

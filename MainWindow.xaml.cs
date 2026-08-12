@@ -54,7 +54,13 @@ public partial class MainWindow : Window
 
     void UpdateJobUi()
     {
-        if (CloseoutTypePanel is null) return;
+        // Radio Checked fires during InitializeComponent before later named fields exist.
+        if (CloseoutTypePanel is null
+            || OpenTicketPanel is null
+            || CloseoutOptionsPanel is null
+            || OpenTicketOptionsPanel is null
+            || TempPanel is null)
+            return;
 
         var openTicket = IsOpenTicketJob;
         CloseoutTypePanel.Visibility = openTicket ? Visibility.Collapsed : Visibility.Visible;
