@@ -120,7 +120,7 @@ Depends on sibling `../DesksideHub/DesksideHub.Core` for job running / Node loca
 
 ## Version
 
-**0.3.0** — first-run setup wizard, identity scrub, publish + per-user installer.
+**0.0.2** — app icon (LFP battery mark), first-run setup wizard, publish + per-user installer.
 
 ## License
 

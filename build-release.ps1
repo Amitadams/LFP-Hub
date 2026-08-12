@@ -40,17 +40,32 @@ if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed ($LASTEXITCODE)" }
 $exe = Join-Path $OutputDir "LfpHub.exe"
 if (-not (Test-Path $exe)) { throw "LfpHub.exe missing after publish: $exe" }
 
-# Stage installer + launcher next to the published app
+# Stage installer + launcher + icon next to the published app
 Copy-Item (Join-Path $Root "install.ps1") $OutputDir -Force
 Copy-Item (Join-Path $Root "install.bat") $OutputDir -Force
 Copy-Item (Join-Path $Root "Open LFP Hub.bat") $OutputDir -Force
 Copy-Item (Join-Path $Root "uninstall.ps1") $OutputDir -Force
+$ico = Join-Path $Root "Assets\LfpHub.ico"
+if (Test-Path $ico) {
+    Copy-Item $ico $OutputDir -Force
+    $assetsOut = Join-Path $OutputDir "Assets"
+    New-Item -ItemType Directory -Path $assetsOut -Force | Out-Null
+    Copy-Item $ico (Join-Path $assetsOut "LfpHub.ico") -Force
+}
+
+# Read version from csproj for zip name
+$ver = "0.0.0"
+try {
+    [xml]$proj = Get-Content $csproj
+    $v = $proj.Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1
+    if ($v) { $ver = [string]$v }
+} catch { }
 
 $dist = Join-Path $Root "dist"
 if (Test-Path $dist) { Remove-Item $dist -Recurse -Force }
 New-Item -ItemType Directory -Path $dist -Force | Out-Null
 
-$zipName = "LfpHub-win-x64.zip"
+$zipName = "LfpHub-$ver-win-x64.zip"
 $zipPath = Join-Path $dist $zipName
 if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
 Compress-Archive -Path (Join-Path $OutputDir "*") -DestinationPath $zipPath -Force
@@ -60,7 +75,7 @@ Copy-Item (Join-Path $Root "install.bat") $dist -Force
 Copy-Item (Join-Path $Root "Open LFP Hub.bat") $dist -Force
 
 Write-Host ""
-Write-Host "Publish OK" -ForegroundColor Green
+Write-Host "Publish OK  v$ver" -ForegroundColor Green
 Write-Host "  App:       $exe"
 Write-Host "  Installer: $(Join-Path $OutputDir 'install.bat')"
 Write-Host "  Zip:       $zipPath"

@@ -88,6 +88,18 @@ Set-Content -Path (Join-Path $InstallDir "Open LFP Hub.bat") -Value $launcher -E
 $targetExe = Join-Path $InstallDir $exeName
 if (-not (Test-Path $targetExe)) { throw "Install failed - $targetExe missing" }
 
+function Get-ShortcutIconLocation {
+    param([string]$Target)
+    $dir = Split-Path $Target -Parent
+    foreach ($name in @("LfpHub.ico", "Assets\LfpHub.ico")) {
+        $candidate = Join-Path $dir $name
+        if (Test-Path -LiteralPath $candidate) {
+            return "$candidate,0"
+        }
+    }
+    return "$Target,0"
+}
+
 function New-Shortcut {
     param(
         [string]$Path,
@@ -102,7 +114,7 @@ function New-Shortcut {
     $s.TargetPath = $Target
     $s.WorkingDirectory = $WorkingDirectory
     $s.Description = $Description
-    $s.IconLocation = "$Target,0"
+    $s.IconLocation = Get-ShortcutIconLocation -Target $Target
     $s.Save()
 }
 
