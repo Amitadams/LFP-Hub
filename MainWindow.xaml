@@ -86,13 +86,15 @@
 
             <StackPanel x:Name="CloseoutTypePanel">
               <TextBlock Style="{StaticResource FieldLabel}" Text="Type"/>
-              <UniformGrid Columns="3">
+              <UniformGrid Columns="2">
                 <RadioButton x:Name="RadPassword" Content="Password" IsChecked="True"
-                             GroupName="Mode" Margin="0,0,8,0" Checked="Mode_Changed"/>
+                             GroupName="Mode" Margin="0,0,8,8" Checked="Mode_Changed"/>
                 <RadioButton x:Name="RadSetup" Content="First login" GroupName="Mode"
-                             Margin="0,0,8,0" Checked="Mode_Changed"/>
+                             Margin="0,0,0,8" Checked="Mode_Changed"/>
                 <RadioButton x:Name="RadMfa" Content="MFA" GroupName="Mode"
-                             Checked="Mode_Changed"/>
+                             Margin="0,0,8,0" Checked="Mode_Changed"/>
+                <RadioButton x:Name="RadNoAccount" Content="No account"
+                             GroupName="Mode" Checked="Mode_Changed"/>
               </UniformGrid>
             </StackPanel>
 
@@ -103,7 +105,7 @@
 
             <StackPanel x:Name="BulkPanel" Margin="0,4,0,0" Visibility="Collapsed">
               <TextBlock Style="{StaticResource HintText}" Margin="0,0,0,10"
-                         Text="One row per user: username and one-time password. CSV (username,password) or text (user pass). Optional name and badge columns. Header row OK."/>
+                         Text="One row per user. Password/first login: username + OTP. MFA or No account: username only (optional name,badge). CSV or paste text. Header row OK."/>
               <DockPanel Margin="0,0,0,8">
                 <Button DockPanel.Dock="Right" Content="Load CSV…" Click="BtnLoadCsv_Click"
                         Style="{StaticResource GhostButton}" Padding="12,6" Margin="8,0,0,0"/>

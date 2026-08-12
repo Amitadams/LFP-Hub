@@ -158,21 +158,29 @@ public static class TemplateFiles
     public const string Password = "LFP Password Reset.md";
     public const string Setup = "LFP Account Setup.md";
     public const string Mfa = "LFP MFA Reset.md";
+    public const string NoAccount = "LFP No Account.md";
 
-    public static IReadOnlyList<string> AllNames { get; } = [Password, Setup, Mfa];
+    public static IReadOnlyList<string> AllNames { get; } =
+        [Password, Setup, Mfa, NoAccount];
 
     public static string ForMode(string mode) => mode switch
     {
         "setup" => Setup,
         "mfa" => Mfa,
+        "noaccount" => NoAccount,
         _ => Password,
     };
+
+    /// <summary>Modes that do not need an Azure one-time password.</summary>
+    public static bool NeedsTempPassword(string mode) =>
+        mode is not "mfa" and not "noaccount";
 
     public static string Label(string fileName) => fileName switch
     {
         Password => "Password reset",
         Setup => "First login",
         Mfa => "MFA reset",
+        NoAccount => "No account",
         _ => fileName,
     };
 }

@@ -98,6 +98,8 @@ Depends on sibling `../DesksideHub/DesksideHub.Core`.
 
 ## Version
 
+**0.0.9** — Close-out type **No account** (refer to LFP provisioning; no OTP).
+
 **0.0.8** — Bulk close-out from CSV or pasted text (username + one-time password).
 
 **0.0.7** — Fix startup crash (NullReference in job UI while XAML loads).

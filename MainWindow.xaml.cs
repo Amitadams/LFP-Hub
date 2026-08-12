@@ -88,15 +88,17 @@ public partial class MainWindow : Window
         }
         else
         {
-            TempPanel.Visibility = RadMfa?.IsChecked == true
-                ? Visibility.Collapsed
-                : Visibility.Visible;
+            TempPanel.Visibility = NeedsTempForCurrentMode()
+                ? Visibility.Visible
+                : Visibility.Collapsed;
         }
 
-        // MFA bulk doesn't need passwords in the list — still allow password mode default
         if (bulk && BulkParseStatus is not null && _bulkRows.Count == 0 && string.IsNullOrWhiteSpace(BulkParseStatus.Text))
             BulkParseStatus.Text = "Paste rows or load a CSV, then Parse.";
     }
+
+    bool NeedsTempForCurrentMode() =>
+        TemplateFiles.NeedsTempPassword(CurrentCloseoutMode());
 
     void BtnClearLog_Click(object sender, RoutedEventArgs e) => LogBox.Clear();
 
@@ -107,8 +109,7 @@ public partial class MainWindow : Window
         RefreshStatusReady();
     }
 
-    bool BulkRequiresPassword =>
-        SelectedMode(RadSetup?.IsChecked == true, RadMfa?.IsChecked == true) is not "mfa";
+    bool BulkRequiresPassword => NeedsTempForCurrentMode();
 
     void BtnLoadCsv_Click(object sender, RoutedEventArgs e)
     {
@@ -179,8 +180,13 @@ public partial class MainWindow : Window
         _runner.Cancel();
     }
 
-    static string SelectedMode(bool setup, bool mfa) =>
-        setup ? "setup" : mfa ? "mfa" : "password";
+    string CurrentCloseoutMode()
+    {
+        if (RadNoAccount?.IsChecked == true) return "noaccount";
+        if (RadSetup?.IsChecked == true) return "setup";
+        if (RadMfa?.IsChecked == true) return "mfa";
+        return "password";
+    }
 
     async void BtnRun_Click(object sender, RoutedEventArgs e)
     {
@@ -222,9 +228,9 @@ public partial class MainWindow : Window
             return;
         }
 
-        var mode = SelectedMode(RadSetup.IsChecked == true, RadMfa.IsChecked == true);
+        var mode = CurrentCloseoutMode();
         // Re-parse so edits since last Parse are included
-        var parsed = BulkCloseoutParser.Parse(TxtBulk.Text, requirePassword: mode is not "mfa");
+        var parsed = BulkCloseoutParser.Parse(TxtBulk.Text, requirePassword: TemplateFiles.NeedsTempPassword(mode));
         ApplyBulkParse(parsed);
         if (_bulkRows.Count == 0)
             return;
@@ -257,8 +263,8 @@ public partial class MainWindow : Window
         var okCount = 0;
         var failCount = 0;
         AppendLog(dry
-            ? $"\n── bulk dry-run · {_bulkRows.Count} ──\n"
-            : $"\n── bulk LIVE · {_bulkRows.Count} ──\n");
+            ? $"\n── bulk dry-run · {_bulkRows.Count} · {mode} ──\n"
+            : $"\n── bulk LIVE · {_bulkRows.Count} · {mode} ──\n");
 
         try
         {
@@ -282,7 +288,7 @@ public partial class MainWindow : Window
                     ita: "",
                     name: row.Name,
                     badge: row.Badge,
-                    temp: mode is "mfa" ? "" : row.TempPassword);
+                    temp: TemplateFiles.NeedsTempPassword(mode) ? row.TempPassword : "");
 
                 var job = new HubJob
                 {
@@ -351,7 +357,7 @@ public partial class MainWindow : Window
             "--tech-identity",
             AppConfig.TechIdentityPath,
         };
-        if (!string.IsNullOrWhiteSpace(temp) && mode is not "mfa")
+        if (!string.IsNullOrWhiteSpace(temp) && TemplateFiles.NeedsTempPassword(mode))
         {
             args.Add("--temp");
             args.Add(temp);
@@ -463,7 +469,7 @@ public partial class MainWindow : Window
         var name = TxtName.Text.Trim();
         var badge = TxtBadge.Text.Trim();
         var temp = TxtTemp.Password.Trim();
-        var mode = SelectedMode(RadSetup.IsChecked == true, RadMfa.IsChecked == true);
+        var mode = CurrentCloseoutMode();
         var templatesDir = AppConfig.ResolveTemplatesDir(cfg);
         var templateFile = Path.Combine(templatesDir, TemplateFiles.ForMode(mode));
 
@@ -477,7 +483,7 @@ public partial class MainWindow : Window
             ErrText.Text = $"Template missing: {Path.GetFileName(templateFile)}. Open Settings.";
             return;
         }
-        if (mode is "password" or "setup")
+        if (TemplateFiles.NeedsTempPassword(mode))
         {
             if (string.IsNullOrWhiteSpace(temp) || temp.Length < 8)
             {
@@ -494,9 +500,12 @@ public partial class MainWindow : Window
         var dry = ChkDryRun.IsChecked == true;
         if (!dry)
         {
+            var confirmBody = mode is "noaccount"
+                ? "This will Teams the no-account referral, comment, and close the ITA (unless skipped).\n\nContinue?"
+                : "This will send Teams, comment, and close the ITA (unless skipped).\n\nContinue?";
             var ok = MessageBox.Show(
                 this,
-                "This will send Teams, comment, and close the ITA (unless skipped).\n\nContinue?",
+                confirmBody,
                 "Confirm",
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Warning,
@@ -505,7 +514,14 @@ public partial class MainWindow : Window
                 return;
         }
 
-        var args = BuildCloseoutArgs(mode, templatesDir, username, ita, name, badge, temp);
+        var args = BuildCloseoutArgs(
+            mode,
+            templatesDir,
+            username,
+            ita,
+            name,
+            badge,
+            TemplateFiles.NeedsTempPassword(mode) ? temp : "");
         var job = new HubJob
         {
             Id = "lfp-reset",
