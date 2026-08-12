@@ -24,9 +24,11 @@ public partial class MainWindow : Window
         _runner.StatusChanged += msg => Dispatcher.Invoke(() => StatusText.Text = msg);
 
         RefreshStatusReady();
-        UpdateTempVisibility();
+        UpdateJobUi();
         TxtUsername.Focus();
     }
+
+    bool IsMfaTicketJob => RadJobMfaTicket?.IsChecked == true;
 
     void RefreshStatusReady()
     {
@@ -40,18 +42,36 @@ public partial class MainWindow : Window
             StatusText.Text = "Node or skills not found.";
         else if (!Directory.Exists(Path.Combine(_skillsRoot, "lfp-reset")))
             StatusText.Text = "lfp-reset skill missing.";
+        else if (!Directory.Exists(Path.Combine(_skillsRoot, "lfp-mfa-ticket")))
+            StatusText.Text = $"Ready · {cfg.Tech.DisplayName} (open MFA ticket skill missing)";
         else
             StatusText.Text = $"Ready · {cfg.Tech.DisplayName}";
     }
 
-    void Mode_Changed(object sender, RoutedEventArgs e) => UpdateTempVisibility();
+    void Job_Changed(object sender, RoutedEventArgs e) => UpdateJobUi();
 
-    void UpdateTempVisibility()
+    void Mode_Changed(object sender, RoutedEventArgs e) => UpdateJobUi();
+
+    void UpdateJobUi()
     {
-        if (TempPanel is null) return;
-        TempPanel.Visibility = RadMfa?.IsChecked == true
-            ? Visibility.Collapsed
-            : Visibility.Visible;
+        if (CloseoutTypePanel is null) return;
+
+        var mfaTicket = IsMfaTicketJob;
+        CloseoutTypePanel.Visibility = mfaTicket ? Visibility.Collapsed : Visibility.Visible;
+        MfaTicketPanel.Visibility = mfaTicket ? Visibility.Visible : Visibility.Collapsed;
+        CloseoutOptionsPanel.Visibility = mfaTicket ? Visibility.Collapsed : Visibility.Visible;
+        MfaTicketOptionsPanel.Visibility = mfaTicket ? Visibility.Visible : Visibility.Collapsed;
+
+        if (mfaTicket)
+        {
+            TempPanel.Visibility = Visibility.Collapsed;
+        }
+        else
+        {
+            TempPanel.Visibility = RadMfa?.IsChecked == true
+                ? Visibility.Collapsed
+                : Visibility.Visible;
+        }
     }
 
     void BtnClearLog_Click(object sender, RoutedEventArgs e) => LogBox.Clear();
@@ -98,11 +118,6 @@ public partial class MainWindow : Window
             ErrText.Text = "Node or skills path missing.";
             return;
         }
-        if (!Directory.Exists(Path.Combine(_skillsRoot, "lfp-reset")))
-        {
-            ErrText.Text = "lfp-reset skill not found.";
-            return;
-        }
 
         var cfg = AppConfig.Load();
         if (!cfg.Tech.IsConfigured)
@@ -112,6 +127,93 @@ public partial class MainWindow : Window
         }
 
         AppConfig.WriteTechIdentityFile(cfg.Tech);
+
+        if (IsMfaTicketJob)
+            await RunMfaTicketAsync(cfg);
+        else
+            await RunCloseoutAsync(cfg);
+    }
+
+    async Task RunMfaTicketAsync(AppConfig cfg)
+    {
+        var skillDir = Path.Combine(_skillsRoot!, "lfp-mfa-ticket");
+        if (!Directory.Exists(skillDir))
+        {
+            ErrText.Text = "lfp-mfa-ticket skill not found under skills root.";
+            return;
+        }
+
+        var username = TxtUsername.Text.Trim();
+        if (string.IsNullOrWhiteSpace(username))
+        {
+            ErrText.Text = "Username is required for an MFA ticket.";
+            return;
+        }
+
+        var dry = ChkDryRun.IsChecked == true;
+        if (!dry)
+        {
+            var ok = MessageBox.Show(
+                this,
+                "Create an open ITA with component MFA - Reset and open it?\n\nContinue?",
+                "Confirm",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question,
+                MessageBoxResult.Yes);
+            if (ok != MessageBoxResult.Yes)
+                return;
+        }
+
+        var args = new List<string>
+        {
+            "--tech-identity",
+            AppConfig.TechIdentityPath,
+            username,
+        };
+        var name = TxtName.Text.Trim();
+        var badge = TxtBadge.Text.Trim();
+        var notes = TxtNotes.Text.Trim();
+        if (!string.IsNullOrWhiteSpace(name))
+        {
+            args.Add("--name");
+            args.Add(name);
+        }
+        if (!string.IsNullOrWhiteSpace(badge))
+        {
+            args.Add("--badge");
+            args.Add(badge);
+        }
+        if (!string.IsNullOrWhiteSpace(notes))
+        {
+            args.Add("--notes");
+            args.Add(notes);
+        }
+        if (ChkNoOpen.IsChecked == true)
+            args.Add("--no-open");
+
+        var job = new HubJob
+        {
+            Id = "lfp-mfa-ticket",
+            Title = "Open MFA ticket",
+            Description = "Create open ITA with MFA - Reset",
+            SkillFolder = "lfp-mfa-ticket",
+            Script = "lfp-mfa-ticket.mjs",
+            SupportsDryRun = true,
+            MutatesLive = true,
+            RequiresVault = false,
+            BaseArgs = args.ToArray(),
+        };
+
+        await ExecuteJobAsync(job, dry);
+    }
+
+    async Task RunCloseoutAsync(AppConfig cfg)
+    {
+        if (!Directory.Exists(Path.Combine(_skillsRoot!, "lfp-reset")))
+        {
+            ErrText.Text = "lfp-reset skill not found.";
+            return;
+        }
 
         var username = TxtUsername.Text.Trim();
         var ita = TxtIta.Text.Trim();
@@ -205,6 +307,11 @@ public partial class MainWindow : Window
             BaseArgs = args.ToArray(),
         };
 
+        await ExecuteJobAsync(job, dry);
+    }
+
+    async Task ExecuteJobAsync(HubJob job, bool dry)
+    {
         BtnRun.IsEnabled = false;
         BtnStop.IsEnabled = true;
         AppendLog(dry ? "\n── dry-run ──\n" : "\n── live ──\n");
@@ -212,8 +319,8 @@ public partial class MainWindow : Window
         {
             var result = await _runner.RunAsync(
                 job,
-                _skillsRoot,
-                _nodeExe,
+                _skillsRoot!,
+                _nodeExe!,
                 new JobRunOptions
                 {
                     DryRun = dry,
