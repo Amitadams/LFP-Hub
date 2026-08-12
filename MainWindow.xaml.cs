@@ -26,9 +26,36 @@ public partial class MainWindow : Window
         _runner.OutputReceived += line => Dispatcher.Invoke(() => AppendLog(RedactSecrets(line)));
         _runner.StatusChanged += msg => Dispatcher.Invoke(() => StatusText.Text = msg);
 
+        InitBulkDefaultTypeCombo();
         RefreshStatusReady();
         UpdateJobUi();
         TxtUsername.Focus();
+    }
+
+    void InitBulkDefaultTypeCombo()
+    {
+        if (CmbBulkDefaultType is null) return;
+        CmbBulkDefaultType.Items.Clear();
+        CmbBulkDefaultType.Items.Add(new BulkTypeItem("password", "Password"));
+        CmbBulkDefaultType.Items.Add(new BulkTypeItem("setup", "First login"));
+        CmbBulkDefaultType.Items.Add(new BulkTypeItem("mfa", "MFA"));
+        CmbBulkDefaultType.Items.Add(new BulkTypeItem("noaccount", "No account"));
+        CmbBulkDefaultType.SelectedIndex = 0;
+        CmbBulkDefaultType.DisplayMemberPath = nameof(BulkTypeItem.Label);
+    }
+
+    sealed class BulkTypeItem(string mode, string label)
+    {
+        public string Mode { get; } = mode;
+        public string Label { get; } = label;
+        public override string ToString() => Label;
+    }
+
+    string BulkDefaultMode()
+    {
+        if (CmbBulkDefaultType?.SelectedItem is BulkTypeItem item)
+            return item.Mode;
+        return CurrentCloseoutMode();
     }
 
     bool IsOpenTicketJob => RadJobOpenTicket?.IsChecked == true;
@@ -76,10 +103,9 @@ public partial class MainWindow : Window
         OpenTicketPanel.Visibility = openTicket ? Visibility.Visible : Visibility.Collapsed;
         OpenTicketOptionsPanel.Visibility = openTicket ? Visibility.Visible : Visibility.Collapsed;
 
-        // Close-out type + options for single close-out and bulk (password/setup/mfa)
-        var closeoutLike = !openTicket;
-        CloseoutTypePanel.Visibility = closeoutLike ? Visibility.Visible : Visibility.Collapsed;
-        CloseoutOptionsPanel.Visibility = closeoutLike ? Visibility.Visible : Visibility.Collapsed;
+        // Type radios only for single close-out (bulk uses Default type + per-row Ticket Type)
+        CloseoutTypePanel.Visibility = (!openTicket && !bulk) ? Visibility.Visible : Visibility.Collapsed;
+        CloseoutOptionsPanel.Visibility = (!openTicket) ? Visibility.Visible : Visibility.Collapsed;
 
         if (openTicket || bulk)
         {
@@ -93,8 +119,10 @@ public partial class MainWindow : Window
                 : Visibility.Collapsed;
         }
 
-        if (bulk && BulkParseStatus is not null && _bulkRows.Count == 0 && string.IsNullOrWhiteSpace(BulkParseStatus.Text))
-            BulkParseStatus.Text = "Paste rows or load a CSV, then Parse.";
+        if (bulk && BulkParseStatus is not null && _bulkRows.Count == 0
+            && (string.IsNullOrWhiteSpace(BulkParseStatus.Text)
+                || BulkParseStatus.Text.StartsWith("Paste", StringComparison.Ordinal)))
+            BulkParseStatus.Text = "Paste CSV with headers, or Sample → Parse.";
     }
 
     bool NeedsTempForCurrentMode() =>
@@ -109,7 +137,11 @@ public partial class MainWindow : Window
         RefreshStatusReady();
     }
 
-    bool BulkRequiresPassword => NeedsTempForCurrentMode();
+    void BtnBulkSample_Click(object sender, RoutedEventArgs e)
+    {
+        TxtBulk.Text = BulkCloseoutParser.SampleCsv;
+        ApplyBulkParse(BulkCloseoutParser.Parse(TxtBulk.Text, BulkDefaultMode()));
+    }
 
     void BtnLoadCsv_Click(object sender, RoutedEventArgs e)
     {
@@ -123,7 +155,7 @@ public partial class MainWindow : Window
         try
         {
             TxtBulk.Text = File.ReadAllText(dlg.FileName);
-            ApplyBulkParse(BulkCloseoutParser.Parse(TxtBulk.Text, BulkRequiresPassword));
+            ApplyBulkParse(BulkCloseoutParser.Parse(TxtBulk.Text, BulkDefaultMode()));
         }
         catch (Exception ex)
         {
@@ -132,7 +164,7 @@ public partial class MainWindow : Window
     }
 
     void BtnParseBulk_Click(object sender, RoutedEventArgs e) =>
-        ApplyBulkParse(BulkCloseoutParser.Parse(TxtBulk.Text, BulkRequiresPassword));
+        ApplyBulkParse(BulkCloseoutParser.Parse(TxtBulk.Text, BulkDefaultMode()));
 
     void ApplyBulkParse(BulkParseResult parsed)
     {
@@ -150,12 +182,21 @@ public partial class MainWindow : Window
         }
 
         ErrText.Text = "";
+        var byType = _bulkRows.GroupBy(r => r.ModeLabel)
+            .Select(g => $"{g.Count()} {g.Key}")
+            .ToList();
+        var summary = string.Join(" · ", byType);
         BulkParseStatus.Text = parsed.Errors.Count > 0
-            ? $"{_bulkRows.Count} ready · {parsed.Errors.Count} skipped"
-            : $"{_bulkRows.Count} ready";
-        AppendLog($"\n── bulk parse: {_bulkRows.Count} user(s) ──\n");
+            ? $"{_bulkRows.Count} ready ({summary}) · {parsed.Errors.Count} skipped"
+            : $"{_bulkRows.Count} ready · {summary}";
+        if (parsed.HadHeader && !string.IsNullOrEmpty(parsed.DetectedColumns))
+            AppendLog($"\n── headers: {parsed.DetectedColumns} ──\n");
+        AppendLog($"── bulk parse: {_bulkRows.Count} row(s) ──\n");
         foreach (var r in _bulkRows)
-            AppendLog($"  {r.Username}" + (string.IsNullOrEmpty(r.Name) ? "" : $" ({r.Name})") + "\n");
+        {
+            var extra = string.IsNullOrEmpty(r.Name) ? "" : $" · {r.Name}";
+            AppendLog($"  {r.Username} · {r.ModeLabel}{extra}\n");
+        }
     }
 
     void AppendLog(string line)
@@ -228,19 +269,21 @@ public partial class MainWindow : Window
             return;
         }
 
-        var mode = CurrentCloseoutMode();
         // Re-parse so edits since last Parse are included
-        var parsed = BulkCloseoutParser.Parse(TxtBulk.Text, requirePassword: TemplateFiles.NeedsTempPassword(mode));
+        var parsed = BulkCloseoutParser.Parse(TxtBulk.Text, BulkDefaultMode());
         ApplyBulkParse(parsed);
         if (_bulkRows.Count == 0)
             return;
 
         var templatesDir = AppConfig.ResolveTemplatesDir(cfg);
-        var templateFile = Path.Combine(templatesDir, TemplateFiles.ForMode(mode));
-        if (!File.Exists(templateFile))
+        foreach (var mode in _bulkRows.Select(r => r.Mode).Distinct())
         {
-            ErrText.Text = $"Template missing: {Path.GetFileName(templateFile)}. Open Settings.";
-            return;
+            var templateFile = Path.Combine(templatesDir, TemplateFiles.ForMode(mode));
+            if (!File.Exists(templateFile))
+            {
+                ErrText.Text = $"Template missing: {Path.GetFileName(templateFile)}. Open Settings.";
+                return;
+            }
         }
 
         var dry = ChkDryRun.IsChecked == true;
@@ -248,7 +291,7 @@ public partial class MainWindow : Window
         {
             var ok = MessageBox.Show(
                 this,
-                $"LIVE bulk close-out for {_bulkRows.Count} user(s).\n\nTeams / comment / close each (unless skipped).\n\nContinue?",
+                $"LIVE bulk close-out for {_bulkRows.Count} row(s).\n\nTeams / comment / close each (unless skipped).\n\nContinue?",
                 "Confirm bulk",
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Warning,
@@ -263,8 +306,8 @@ public partial class MainWindow : Window
         var okCount = 0;
         var failCount = 0;
         AppendLog(dry
-            ? $"\n── bulk dry-run · {_bulkRows.Count} · {mode} ──\n"
-            : $"\n── bulk LIVE · {_bulkRows.Count} · {mode} ──\n");
+            ? $"\n── bulk dry-run · {_bulkRows.Count} ──\n"
+            : $"\n── bulk LIVE · {_bulkRows.Count} ──\n");
 
         try
         {
@@ -278,22 +321,22 @@ public partial class MainWindow : Window
                 }
 
                 var row = _bulkRows[i];
-                AppendLog($"\n── [{i + 1}/{_bulkRows.Count}] {row.Username} ──\n");
-                StatusText.Text = $"Bulk {i + 1}/{_bulkRows.Count} · {row.Username}";
+                AppendLog($"\n── [{i + 1}/{_bulkRows.Count}] {row.Username} · {row.ModeLabel} ──\n");
+                StatusText.Text = $"Bulk {i + 1}/{_bulkRows.Count} · {row.Username} · {row.ModeLabel}";
 
                 var args = BuildCloseoutArgs(
-                    mode,
+                    row.Mode,
                     templatesDir,
                     username: row.Username,
                     ita: "",
                     name: row.Name,
                     badge: row.Badge,
-                    temp: TemplateFiles.NeedsTempPassword(mode) ? row.TempPassword : "");
+                    temp: TemplateFiles.NeedsTempPassword(row.Mode) ? row.TempPassword : "");
 
                 var job = new HubJob
                 {
                     Id = "lfp-reset",
-                    Title = $"Bulk · {row.Username}",
+                    Title = $"Bulk · {row.Username} · {row.ModeLabel}",
                     Description = "TeslaLFP close-out",
                     SkillFolder = "lfp-reset",
                     Script = "lfp-reset.mjs",

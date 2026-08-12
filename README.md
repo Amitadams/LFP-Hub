@@ -98,6 +98,8 @@ Depends on sibling `../DesksideHub/DesksideHub.Core`.
 
 ## Version
 
+**0.0.10** — Bulk CSV headers: Username, Password, Name, Ticket Type, Badge (per-row types).
+
 **0.0.9** — Close-out type **No account** (refer to LFP provisioning; no OTP).
 
 **0.0.8** — Bulk close-out from CSV or pasted text (username + one-time password).

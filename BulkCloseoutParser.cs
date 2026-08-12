@@ -3,42 +3,49 @@ using System.Text;
 
 namespace LfpHub;
 
-/// <summary>One bulk close-out row: username + one-time password (+ optional name/badge).</summary>
+/// <summary>One bulk close-out row with optional per-row ticket type.</summary>
 public sealed class BulkCloseoutRow
 {
     public required string Username { get; init; }
-    public required string TempPassword { get; init; }
+    public string TempPassword { get; init; } = "";
     public string Name { get; init; } = "";
     public string Badge { get; init; } = "";
+    /// <summary>password | setup | mfa | noaccount</summary>
+    public required string Mode { get; init; }
     public int LineNumber { get; init; }
+
+    public string ModeLabel => BulkCloseoutParser.ModeLabel(Mode);
 }
 
 public sealed class BulkParseResult
 {
     public List<BulkCloseoutRow> Rows { get; } = [];
     public List<string> Errors { get; } = [];
+    public bool HadHeader { get; set; }
+    public string? DetectedColumns { get; set; }
 }
 
 /// <summary>
-/// Parse username + one-time password lists from CSV or free text.
-/// Supported:
-///   username,password
-///   username,password,name,badge
-///   username password
-///   username\tpassword
-/// Header row optional (username/user + password/temp/otp).
+/// Parse bulk close-out lists from CSV or free text.
+/// Preferred header:
+///   Username,Password,Name,Ticket Type,Badge
+/// Ticket Type: Password | First login | MFA | No account
+/// Without a type column, defaultMode is used for every row.
 /// </summary>
 public static class BulkCloseoutParser
 {
-    /// <param name="requirePassword">When false (MFA close-out), username-only rows are allowed.</param>
-    public static BulkParseResult Parse(string text, bool requirePassword = true) =>
-        ParseLines(SplitLines(text), requirePassword);
+    public const string SampleCsv =
+        "Username,Password,Name,Ticket Type,Badge\r\n" +
+        "jdoe,OneTimeP@ss14,Jane Doe,Password,\r\n" +
+        "pdeyo,,Parker Deyo,MFA,702960\r\n" +
+        "asmith,,,No account,\r\n";
 
-    public static BulkParseResult ParseFile(string path, bool requirePassword = true)
-    {
-        var text = File.ReadAllText(path);
-        return Parse(text, requirePassword);
-    }
+    /// <param name="defaultMode">Used when a row has no Ticket Type column/value.</param>
+    public static BulkParseResult Parse(string text, string defaultMode = "password") =>
+        ParseLines(SplitLines(text), defaultMode);
+
+    public static BulkParseResult ParseFile(string path, string defaultMode = "password") =>
+        Parse(File.ReadAllText(path), defaultMode);
 
     static IEnumerable<string> SplitLines(string text)
     {
@@ -48,13 +55,14 @@ public static class BulkCloseoutParser
             yield return line;
     }
 
-    public static BulkParseResult ParseLines(IEnumerable<string> lines, bool requirePassword = true)
+    public static BulkParseResult ParseLines(IEnumerable<string> lines, string defaultMode = "password")
     {
+        defaultMode = NormalizeMode(defaultMode) ?? "password";
         var result = new BulkParseResult();
         var list = lines.ToList();
         var start = 0;
         var hasHeader = false;
-        int userCol = 0, passCol = 1, nameCol = -1, badgeCol = -1;
+        int userCol = 0, passCol = -1, nameCol = -1, badgeCol = -1, typeCol = -1;
 
         if (list.Count > 0)
         {
@@ -63,12 +71,22 @@ public static class BulkCloseoutParser
             {
                 hasHeader = true;
                 start = 1;
-                userCol = IndexOfHeader(first, "username", "user", "login", "samaccountname", "uid");
-                passCol = IndexOfHeader(first, "password", "temp", "otp", "onetimepassword", "temp_password", "temporary");
-                nameCol = IndexOfHeader(first, "name", "fullname", "display", "displayname");
-                badgeCol = IndexOfHeader(first, "badge", "badgenumber", "emp", "employee");
+                userCol = IndexOfHeader(first,
+                    "username", "user", "login", "samaccountname", "uid", "account");
+                passCol = IndexOfHeader(first,
+                    "password", "temp", "otp", "onetimepassword", "temp_password",
+                    "temporary", "temppassword", "onetimepassword");
+                nameCol = IndexOfHeader(first,
+                    "name", "fullname", "display", "displayname", "fullname", "fullname");
+                badgeCol = IndexOfHeader(first,
+                    "badge", "badgenumber", "emp", "employee");
+                typeCol = IndexOfHeader(first,
+                    "tickettype", "type", "mode", "job", "ticket",
+                    "closeout", "closeouttype", "requesttype");
+
                 if (userCol < 0) userCol = 0;
-                if (passCol < 0) passCol = first.Count > 1 ? 1 : -1;
+                result.HadHeader = true;
+                result.DetectedColumns = string.Join(", ", first.Where(f => !string.IsNullOrWhiteSpace(f)));
             }
         }
 
@@ -86,6 +104,7 @@ public static class BulkCloseoutParser
             string pass = "";
             string name = "";
             string badge = "";
+            string typeRaw = "";
 
             if (hasHeader)
             {
@@ -93,37 +112,78 @@ public static class BulkCloseoutParser
                 pass = passCol >= 0 ? Get(fields, passCol) : "";
                 if (nameCol >= 0) name = Get(fields, nameCol);
                 if (badgeCol >= 0) badge = Get(fields, badgeCol);
+                if (typeCol >= 0) typeRaw = Get(fields, typeCol);
             }
             else if (fields.Count >= 2)
             {
+                // Positional: username, password|type [, name] [, type|badge] ...
                 user = fields[0];
-                pass = fields[1];
-                if (fields.Count >= 3) name = fields[2];
-                if (fields.Count >= 4) badge = fields[3];
-            }
-            else if (!requirePassword && fields.Count == 1)
-            {
-                user = fields[0];
+                var second = fields[1];
+                var secondMode = NormalizeMode(second);
+                if (secondMode is not null && second.Length < 24 && !LooksLikePassword(second))
+                {
+                    typeRaw = second;
+                    if (fields.Count >= 3) name = fields[2];
+                    if (fields.Count >= 4) badge = fields[3];
+                }
+                else
+                {
+                    pass = second;
+                    if (fields.Count >= 3)
+                    {
+                        var m3 = NormalizeMode(fields[2]);
+                        if (m3 is not null)
+                            typeRaw = fields[2];
+                        else
+                            name = fields[2];
+                    }
+                    if (fields.Count >= 4)
+                    {
+                        var m4 = NormalizeMode(fields[3]);
+                        if (m4 is not null && string.IsNullOrEmpty(typeRaw))
+                            typeRaw = fields[3];
+                        else if (string.IsNullOrEmpty(name))
+                            name = fields[3];
+                        else
+                            badge = fields[3];
+                    }
+                    if (fields.Count >= 5 && string.IsNullOrEmpty(badge))
+                        badge = fields[4];
+                }
             }
             else
             {
-                result.Errors.Add($"Line {lineNo}: need username and password.");
-                continue;
+                user = fields[0];
             }
 
             user = NormalizeUsername(user);
             pass = pass.Trim().Trim('"');
+            name = name.Trim().Trim('"');
+            badge = badge.Trim().Trim('"');
 
             if (string.IsNullOrWhiteSpace(user))
             {
                 result.Errors.Add($"Line {lineNo}: missing username.");
                 continue;
             }
-            if (requirePassword)
+
+            if (!string.IsNullOrWhiteSpace(typeRaw) && NormalizeMode(typeRaw) is null)
+            {
+                result.Errors.Add(
+                    $"Line {lineNo} ({user}): unknown ticket type '{typeRaw}'. " +
+                    "Use Password, First login, MFA, or No account.");
+                continue;
+            }
+
+            var mode = NormalizeMode(typeRaw) ?? defaultMode;
+            var needsPass = TemplateFiles.NeedsTempPassword(mode);
+
+            if (needsPass)
             {
                 if (string.IsNullOrWhiteSpace(pass) || pass.Length < 8)
                 {
-                    result.Errors.Add($"Line {lineNo} ({user}): password missing or too short (8+).");
+                    result.Errors.Add(
+                        $"Line {lineNo} ({user}): {ModeLabel(mode)} needs password (8+ characters).");
                     continue;
                 }
                 if (pass.Contains("007.teslamotors.com", StringComparison.OrdinalIgnoreCase))
@@ -134,13 +194,16 @@ public static class BulkCloseoutParser
             }
 
             result.Rows.RemoveAll(r =>
-                string.Equals(r.Username, user, StringComparison.OrdinalIgnoreCase));
+                string.Equals(r.Username, user, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(r.Mode, mode, StringComparison.OrdinalIgnoreCase));
+
             result.Rows.Add(new BulkCloseoutRow
             {
                 Username = user,
-                TempPassword = pass,
-                Name = name.Trim(),
-                Badge = badge.Trim(),
+                TempPassword = needsPass ? pass : "",
+                Name = name,
+                Badge = badge,
+                Mode = mode,
                 LineNumber = lineNo,
             });
         }
@@ -148,11 +211,57 @@ public static class BulkCloseoutParser
         return result;
     }
 
+    /// <summary>Map free text to mode id, or null if unknown.</summary>
+    public static string? NormalizeMode(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        var s = new string(raw.Trim().ToLowerInvariant()
+            .Where(c => char.IsLetterOrDigit(c) || c is ' ' or '-' or '_')
+            .ToArray())
+            .Replace('_', ' ')
+            .Replace('-', ' ');
+        while (s.Contains("  ", StringComparison.Ordinal))
+            s = s.Replace("  ", " ", StringComparison.Ordinal);
+        s = s.Trim();
+
+        return s switch
+        {
+            "password" or "pwd" or "pass" or "pw" or "reset" or "password reset"
+                or "lfp password" or "pwreset" => "password",
+            "setup" or "first login" or "firstlogin" or "first time" or "firsttime"
+                or "account setup" or "new account" or "new" => "setup",
+            "mfa" or "authenticator" or "2fa" or "totp" or "mfa reset"
+                or "mfa only" => "mfa",
+            "noaccount" or "no account" or "not found" or "missing" or "none"
+                or "no user" or "does not exist" or "doesnt exist" or "account not found"
+                or "initial" or "create account" or "provision" => "noaccount",
+            _ => null,
+        };
+    }
+
+    public static string ModeLabel(string mode) => mode switch
+    {
+        "setup" => "First login",
+        "mfa" => "MFA",
+        "noaccount" => "No account",
+        _ => "Password",
+    };
+
+    static bool LooksLikePassword(string s) =>
+        s.Length >= 8 && (s.Any(char.IsDigit) || s.Any(c => !char.IsLetterOrDigit(c)));
+
     static bool LooksLikeHeader(List<string> fields)
     {
         if (fields.Count == 0) return false;
         var joined = string.Join(" ", fields).ToLowerInvariant();
-        return joined.Contains("user") || joined.Contains("password") || joined.Contains("temp") || joined.Contains("otp");
+        return joined.Contains("user")
+               || joined.Contains("password")
+               || joined.Contains("temp")
+               || joined.Contains("otp")
+               || joined.Contains("name")
+               || joined.Contains("type")
+               || joined.Contains("ticket")
+               || joined.Contains("badge");
     }
 
     static int IndexOfHeader(List<string> fields, params string[] names)
@@ -162,7 +271,8 @@ public static class BulkCloseoutParser
             var f = NormalizeHeader(fields[i]);
             foreach (var n in names)
             {
-                if (f == n || f.Replace("_", "") == n.Replace("_", ""))
+                var nn = NormalizeHeader(n);
+                if (f == nn || f.Replace("_", "") == nn.Replace("_", ""))
                     return i;
             }
         }
@@ -170,7 +280,8 @@ public static class BulkCloseoutParser
     }
 
     static string NormalizeHeader(string s) =>
-        new string((s ?? "").Trim().ToLowerInvariant().Where(c => char.IsLetterOrDigit(c) || c == '_').ToArray());
+        new string((s ?? "").Trim().ToLowerInvariant()
+            .Where(c => char.IsLetterOrDigit(c) || c == '_').ToArray());
 
     static string Get(List<string> fields, int index) =>
         index >= 0 && index < fields.Count ? fields[index].Trim().Trim('"') : "";
@@ -185,7 +296,6 @@ public static class BulkCloseoutParser
         return u.ToLowerInvariant();
     }
 
-    /// <summary>CSV-ish split: commas, tabs, or whitespace (2+ tokens).</summary>
     public static List<string> SplitFields(string line)
     {
         var s = (line ?? "").Trim();
@@ -197,7 +307,6 @@ public static class BulkCloseoutParser
         if (s.Contains(','))
             return SplitCsvLike(s, ',');
 
-        // whitespace-separated: first token user, remainder is password (may contain spaces rarely)
         var parts = new List<string>();
         var span = s.AsSpan().Trim();
         var i = 0;

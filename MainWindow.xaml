@@ -104,18 +104,30 @@
             </StackPanel>
 
             <StackPanel x:Name="BulkPanel" Margin="0,4,0,0" Visibility="Collapsed">
-              <TextBlock Style="{StaticResource HintText}" Margin="0,0,0,10"
-                         Text="One row per user. Password/first login: username + OTP. MFA or No account: username only (optional name,badge). CSV or paste text. Header row OK."/>
-              <DockPanel Margin="0,0,0,8">
-                <Button DockPanel.Dock="Right" Content="Load CSV…" Click="BtnLoadCsv_Click"
-                        Style="{StaticResource GhostButton}" Padding="12,6" Margin="8,0,0,0"/>
-                <Button DockPanel.Dock="Right" Content="Parse" Click="BtnParseBulk_Click"
-                        Style="{StaticResource GhostButton}" Padding="12,6"/>
-                <TextBlock x:Name="BulkParseStatus" Style="{StaticResource HintText}"
-                           VerticalAlignment="Center"/>
-              </DockPanel>
+              <TextBlock Style="{StaticResource HintText}" Margin="0,0,0,8" TextWrapping="Wrap"
+                         Text="CSV or paste with headers. Columns: Username, Password, Name, Ticket Type, Badge. Ticket Type per row: Password, First login, MFA, No account. Rows without a type use Default type below."/>
+              <Grid Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto"/>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Style="{StaticResource FieldLabel}" Text="Default type" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                <ComboBox x:Name="CmbBulkDefaultType" Grid.Column="1" MaxWidth="200" HorizontalAlignment="Left"
+                          SelectedIndex="0" Padding="8,6"/>
+                <StackPanel Grid.Column="2" Orientation="Horizontal">
+                  <Button Content="Sample" Click="BtnBulkSample_Click"
+                          Style="{StaticResource GhostButton}" Padding="12,6" Margin="0,0,8,0"
+                          ToolTip="Insert a sample CSV with headers"/>
+                  <Button Content="Load CSV…" Click="BtnLoadCsv_Click"
+                          Style="{StaticResource GhostButton}" Padding="12,6" Margin="0,0,8,0"/>
+                  <Button Content="Parse" Click="BtnParseBulk_Click"
+                          Style="{StaticResource GhostButton}" Padding="12,6"/>
+                </StackPanel>
+              </Grid>
+              <TextBlock x:Name="BulkParseStatus" Style="{StaticResource HintText}" Margin="0,0,0,6"/>
               <TextBox x:Name="TxtBulk" AcceptsReturn="True" TextWrapping="NoWrap"
-                       Height="140" VerticalScrollBarVisibility="Auto"
+                       Height="150" VerticalScrollBarVisibility="Auto"
                        HorizontalScrollBarVisibility="Auto"
                        FontFamily="{StaticResource MonoFont}" FontSize="12.5"
                        AcceptsTab="True"/>

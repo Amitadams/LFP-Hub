@@ -262,6 +262,21 @@
       </Setter>
     </Style>
 
+    <Style TargetType="ComboBox">
+      <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+      <Setter Property="Background" Value="{StaticResource InputBgBrush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource InputBorderBrush}"/>
+      <Setter Property="BorderThickness" Value="1.5"/>
+      <Setter Property="Padding" Value="10,8"/>
+      <Setter Property="FontSize" Value="13.5"/>
+    </Style>
+
+    <Style TargetType="ComboBoxItem">
+      <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+      <Setter Property="Background" Value="{StaticResource PanelBrush}"/>
+      <Setter Property="Padding" Value="10,8"/>
+    </Style>
+
     <Style x:Key="Card" TargetType="Border">
       <Setter Property="Background" Value="{StaticResource PanelBrush}"/>
       <Setter Property="BorderBrush" Value="{StaticResource BorderBrushKey}"/>
