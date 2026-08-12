@@ -11,8 +11,10 @@ obj/
 
 ## Publish / local
 publish/
+dist/
 *.log
 *.tmp
+*.zip
 
 ## Local identity & config (never commit)
 **/tech-identity.json

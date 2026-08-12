@@ -17,12 +17,27 @@ public partial class SettingsWindow : Window
         InitializeComponent();
         _loading = true;
         var cfg = AppConfig.Load();
-        TxtDisplayName.Text = cfg.Tech.DisplayName;
-        TxtTechUsername.Text = cfg.Tech.Username;
-        TxtEmail.Text = cfg.Tech.Email;
-        TxtSite.Text = string.IsNullOrWhiteSpace(cfg.Tech.Site) ? "GFNV" : cfg.Tech.Site;
-        TxtSignatureTitle.Text = cfg.Tech.SignatureTitle;
-        TxtWalkupHours.Text = cfg.Tech.WalkupHours;
+        // Never show another tech's identity; incomplete setup stays blank.
+        if (cfg.Tech.IsConfigured)
+        {
+            TxtDisplayName.Text = cfg.Tech.DisplayName;
+            TxtTechUsername.Text = cfg.Tech.Username;
+            TxtEmail.Text = cfg.Tech.Email;
+            TxtSite.Text = string.IsNullOrWhiteSpace(cfg.Tech.Site) ? "GFNV" : cfg.Tech.Site;
+            TxtSignatureTitle.Text = cfg.Tech.SignatureTitle;
+            TxtWalkupHours.Text = string.IsNullOrWhiteSpace(cfg.Tech.WalkupHours)
+                ? "7:00 AM – 7:00 PM"
+                : cfg.Tech.WalkupHours;
+        }
+        else
+        {
+            TxtDisplayName.Text = "";
+            TxtTechUsername.Text = "";
+            TxtEmail.Text = "";
+            TxtSite.Text = "GFNV";
+            TxtSignatureTitle.Text = "Tesla IT Support — GFNV";
+            TxtWalkupHours.Text = "7:00 AM – 7:00 PM";
+        }
 
         var dir = AppConfig.ResolveTemplatesDir(cfg);
         TxtTemplatesDir.Text = dir;
@@ -157,6 +172,7 @@ public partial class SettingsWindow : Window
 
             var cfg = AppConfig.Load();
             cfg.Tech = tech;
+            cfg.SetupComplete = true;
             cfg.TemplatesDirectory =
                 string.Equals(dir, AppConfig.DefaultWorkingTemplatesDir, StringComparison.OrdinalIgnoreCase)
                     ? null

@@ -1,6 +1,8 @@
 using System.IO;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 
 namespace LfpHub;
 
@@ -11,10 +13,13 @@ public sealed class AppConfig
     {
         WriteIndented = true,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 
     public string? TemplatesDirectory { get; set; }
     public TechIdentity Tech { get; set; } = new();
+    /// <summary>True after first-time setup wizard completes.</summary>
+    public bool SetupComplete { get; set; }
 
     public static string AppDataDir =>
         Path.Combine(
@@ -30,6 +35,51 @@ public sealed class AppConfig
 
     public static string DefaultWorkingTemplatesDir =>
         Path.Combine(AppDataDir, "Templates");
+
+    public static bool NeedsFirstRunSetup()
+    {
+        ScrubLegacyPersonalIdentity();
+        var cfg = Load();
+        return !cfg.SetupComplete || !cfg.Tech.IsConfigured;
+    }
+
+    /// <summary>
+    /// Drop leftover identity that still names a blocked previous tech
+    /// so every install starts clean until the wizard runs.
+    /// </summary>
+    public static void ScrubLegacyPersonalIdentity()
+    {
+        try
+        {
+            foreach (var path in new[] { ConfigPath, TechIdentityPath })
+            {
+                if (!File.Exists(path)) continue;
+                var text = File.ReadAllText(path);
+                if (!TechIdentity.ContainsBlockedName(text)) continue;
+                File.Delete(path);
+            }
+
+            // Working templates may have been saved with a personal signature expanded.
+            if (Directory.Exists(DefaultWorkingTemplatesDir))
+            {
+                foreach (var file in Directory.EnumerateFiles(DefaultWorkingTemplatesDir, "*.md"))
+                {
+                    var body = File.ReadAllText(file);
+                    if (!TechIdentity.ContainsBlockedName(body)) continue;
+                    var name = Path.GetFileName(file);
+                    var bundled = Path.Combine(BundledTemplatesDir, name);
+                    if (File.Exists(bundled))
+                        File.Copy(bundled, file, overwrite: true);
+                    else
+                        File.Delete(file);
+                }
+            }
+        }
+        catch
+        {
+            /* best-effort */
+        }
+    }
 
     public static string ResolveTemplatesDir(AppConfig? cfg = null)
     {
@@ -76,8 +126,18 @@ public sealed class AppConfig
         }
 
         cfg.Tech ??= new TechIdentity();
-        if (!cfg.Tech.IsConfigured)
-            cfg.Tech.TrySeedFromNova();
+        // Never auto-fill another person's identity.
+        if (TechIdentity.ContainsBlockedName(cfg.Tech.DisplayName)
+            || TechIdentity.ContainsBlockedName(cfg.Tech.Email)
+            || TechIdentity.ContainsBlockedName(cfg.Tech.Username))
+        {
+            cfg.Tech = new TechIdentity();
+            cfg.SetupComplete = false;
+        }
+
+        if (cfg.Tech.IsConfigured && !cfg.SetupComplete)
+            cfg.SetupComplete = true;
+
         return cfg;
     }
 
@@ -85,7 +145,8 @@ public sealed class AppConfig
     {
         Directory.CreateDirectory(AppDataDir);
         Tech ??= new TechIdentity();
-        File.WriteAllText(ConfigPath, JsonSerializer.Serialize(this, JsonOpts));
+        var utf8 = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+        File.WriteAllText(ConfigPath, JsonSerializer.Serialize(this, JsonOpts) + Environment.NewLine, utf8);
         WriteTechIdentityFile(Tech);
     }
 
@@ -102,12 +163,24 @@ public sealed class AppConfig
             signatureTitle = tech.SignatureTitle?.Trim() ?? "",
             walkupHours = tech.WalkupHours?.Trim() ?? "",
         };
-        File.WriteAllText(TechIdentityPath, JsonSerializer.Serialize(payload, JsonOpts) + Environment.NewLine);
+        var utf8 = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+        File.WriteAllText(
+            TechIdentityPath,
+            JsonSerializer.Serialize(payload, JsonOpts) + Environment.NewLine,
+            utf8);
     }
 }
 
 public sealed class TechIdentity
 {
+    /// <summary>Names that must never ship as defaults or linger in local config.</summary>
+    static readonly string[] BlockedNameFragments =
+    [
+        "amity adams",
+        "amitadams",
+        "amity.adams",
+    ];
+
     public string DisplayName { get; set; } = "";
     public string Email { get; set; } = "";
     public string Username { get; set; } = "";
@@ -118,7 +191,22 @@ public sealed class TechIdentity
     [JsonIgnore]
     public bool IsConfigured =>
         !string.IsNullOrWhiteSpace(DisplayName)
-        && !string.IsNullOrWhiteSpace(Username);
+        && !string.IsNullOrWhiteSpace(Username)
+        && !ContainsBlockedName(DisplayName)
+        && !ContainsBlockedName(Username)
+        && !ContainsBlockedName(Email);
+
+    public static bool ContainsBlockedName(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return false;
+        var n = text.ToLowerInvariant();
+        foreach (var frag in BlockedNameFragments)
+        {
+            if (n.Contains(frag, StringComparison.Ordinal))
+                return true;
+        }
+        return false;
+    }
 
     public string ValidationError()
     {
@@ -126,37 +214,14 @@ public sealed class TechIdentity
             return "Display name is required.";
         if (string.IsNullOrWhiteSpace(Username))
             return "Username is required.";
+        if (ContainsBlockedName(DisplayName) || ContainsBlockedName(Username) || ContainsBlockedName(Email))
+            return "Enter your own tech identity.";
+        if (Username.Contains('@', StringComparison.Ordinal))
+            return "Username only — no @tesla.com.";
+        if (!string.IsNullOrWhiteSpace(Email)
+            && !Regex.IsMatch(Email.Trim(), @"^[^@\s]+@[^@\s]+\.[^@\s]+$"))
+            return "Email looks invalid.";
         return "";
-    }
-
-    /// <summary>One-time seed from Nova skills tech-identity.json when LFP Hub has none.</summary>
-    public void TrySeedFromNova()
-    {
-        try
-        {
-            var nova = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                "Nova", ".opencode", "skills", "_shared", "tech-identity.json");
-            if (!File.Exists(nova)) return;
-            using var doc = JsonDocument.Parse(File.ReadAllText(nova));
-            var r = doc.RootElement;
-            if (r.TryGetProperty("displayName", out var dn) && string.IsNullOrWhiteSpace(DisplayName))
-                DisplayName = dn.GetString() ?? "";
-            if (r.TryGetProperty("email", out var em) && string.IsNullOrWhiteSpace(Email))
-                Email = em.GetString() ?? "";
-            if (r.TryGetProperty("username", out var un) && string.IsNullOrWhiteSpace(Username))
-                Username = un.GetString() ?? "";
-            if (r.TryGetProperty("site", out var site) && !string.IsNullOrWhiteSpace(site.GetString()))
-                Site = site.GetString() ?? Site;
-            if (r.TryGetProperty("signatureTitle", out var st) && !string.IsNullOrWhiteSpace(st.GetString()))
-                SignatureTitle = st.GetString() ?? SignatureTitle;
-            if (r.TryGetProperty("walkupHours", out var wh) && !string.IsNullOrWhiteSpace(wh.GetString()))
-                WalkupHours = wh.GetString() ?? WalkupHours;
-        }
-        catch
-        {
-            /* ignore */
-        }
     }
 }
 

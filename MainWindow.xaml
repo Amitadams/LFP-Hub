@@ -5,7 +5,8 @@
         Height="780" Width="720"
         MinHeight="640" MinWidth="580"
         Background="{StaticResource BgBrush}"
-        WindowStartupLocation="CenterScreen">
+        WindowStartupLocation="CenterScreen"
+        Icon="pack://application:,,,/Assets/LfpHub.ico">
   <DockPanel>
     <Border DockPanel.Dock="Top" Background="{StaticResource PanelBrush}"
             BorderBrush="{StaticResource BorderBrushKey}" BorderThickness="0,0,0,1">

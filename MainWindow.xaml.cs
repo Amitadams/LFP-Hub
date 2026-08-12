@@ -33,7 +33,7 @@ public partial class MainWindow : Window
         var cfg = AppConfig.Load();
         if (!cfg.Tech.IsConfigured)
         {
-            StatusText.Text = "Open Settings and set Tech identity.";
+            StatusText.Text = "Set your tech identity in Settings.";
             return;
         }
         if (_nodeExe is null || _skillsRoot is null)
@@ -107,7 +107,7 @@ public partial class MainWindow : Window
         var cfg = AppConfig.Load();
         if (!cfg.Tech.IsConfigured)
         {
-            ErrText.Text = "Set Tech identity in Settings first.";
+            ErrText.Text = "Set your tech identity in Settings first.";
             return;
         }
 

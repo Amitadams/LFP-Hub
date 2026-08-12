@@ -11,6 +11,25 @@ public partial class App : Application
             new WindowsPathProvider(),
             new DefaultNodeLocator(),
             new WindowsOsShell());
+
         base.OnStartup(e);
+
+        AppConfig.ScrubLegacyPersonalIdentity();
+        AppConfig.EnsureWorkingTemplates();
+
+        if (AppConfig.NeedsFirstRunSetup())
+        {
+            var setup = new SetupWindow();
+            var ok = setup.ShowDialog() == true;
+            if (!ok || AppConfig.NeedsFirstRunSetup())
+            {
+                Shutdown(1);
+                return;
+            }
+        }
+
+        var main = new MainWindow();
+        MainWindow = main;
+        main.Show();
     }
 }
