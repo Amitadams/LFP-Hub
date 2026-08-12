@@ -28,7 +28,7 @@ public partial class MainWindow : Window
         TxtUsername.Focus();
     }
 
-    bool IsMfaTicketJob => RadJobMfaTicket?.IsChecked == true;
+    bool IsOpenTicketJob => RadJobOpenTicket?.IsChecked == true;
 
     void RefreshStatusReady()
     {
@@ -42,8 +42,8 @@ public partial class MainWindow : Window
             StatusText.Text = "Node or skills not found.";
         else if (!Directory.Exists(Path.Combine(_skillsRoot, "lfp-reset")))
             StatusText.Text = "lfp-reset skill missing.";
-        else if (!Directory.Exists(Path.Combine(_skillsRoot, "lfp-mfa-ticket")))
-            StatusText.Text = $"Ready · {cfg.Tech.DisplayName} (open MFA ticket skill missing)";
+        else if (!Directory.Exists(Path.Combine(_skillsRoot, "lfp-open-ticket")))
+            StatusText.Text = $"Ready · {cfg.Tech.DisplayName} (open LFP ticket skill missing)";
         else
             StatusText.Text = $"Ready · {cfg.Tech.DisplayName}";
     }
@@ -56,13 +56,13 @@ public partial class MainWindow : Window
     {
         if (CloseoutTypePanel is null) return;
 
-        var mfaTicket = IsMfaTicketJob;
-        CloseoutTypePanel.Visibility = mfaTicket ? Visibility.Collapsed : Visibility.Visible;
-        MfaTicketPanel.Visibility = mfaTicket ? Visibility.Visible : Visibility.Collapsed;
-        CloseoutOptionsPanel.Visibility = mfaTicket ? Visibility.Collapsed : Visibility.Visible;
-        MfaTicketOptionsPanel.Visibility = mfaTicket ? Visibility.Visible : Visibility.Collapsed;
+        var openTicket = IsOpenTicketJob;
+        CloseoutTypePanel.Visibility = openTicket ? Visibility.Collapsed : Visibility.Visible;
+        OpenTicketPanel.Visibility = openTicket ? Visibility.Visible : Visibility.Collapsed;
+        CloseoutOptionsPanel.Visibility = openTicket ? Visibility.Collapsed : Visibility.Visible;
+        OpenTicketOptionsPanel.Visibility = openTicket ? Visibility.Visible : Visibility.Collapsed;
 
-        if (mfaTicket)
+        if (openTicket)
         {
             TempPanel.Visibility = Visibility.Collapsed;
         }
@@ -128,25 +128,25 @@ public partial class MainWindow : Window
 
         AppConfig.WriteTechIdentityFile(cfg.Tech);
 
-        if (IsMfaTicketJob)
-            await RunMfaTicketAsync(cfg);
+        if (IsOpenTicketJob)
+            await RunOpenTicketAsync(cfg);
         else
             await RunCloseoutAsync(cfg);
     }
 
-    async Task RunMfaTicketAsync(AppConfig cfg)
+    async Task RunOpenTicketAsync(AppConfig cfg)
     {
-        var skillDir = Path.Combine(_skillsRoot!, "lfp-mfa-ticket");
+        var skillDir = Path.Combine(_skillsRoot!, "lfp-open-ticket");
         if (!Directory.Exists(skillDir))
         {
-            ErrText.Text = "lfp-mfa-ticket skill not found under skills root.";
+            ErrText.Text = "lfp-open-ticket skill not found under skills root.";
             return;
         }
 
         var username = TxtUsername.Text.Trim();
         if (string.IsNullOrWhiteSpace(username))
         {
-            ErrText.Text = "Username is required for an MFA ticket.";
+            ErrText.Text = "Username is required to open an LFP ticket.";
             return;
         }
 
@@ -155,7 +155,7 @@ public partial class MainWindow : Window
         {
             var ok = MessageBox.Show(
                 this,
-                "Create an open ITA with component MFA - Reset and open it?\n\nContinue?",
+                "Create an open LFP ITA (component MFA - Reset) and open it?\n\nContinue?",
                 "Confirm",
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Question,
@@ -193,11 +193,11 @@ public partial class MainWindow : Window
 
         var job = new HubJob
         {
-            Id = "lfp-mfa-ticket",
-            Title = "Open MFA ticket",
+            Id = "lfp-open-ticket",
+            Title = "Open LFP Ticket",
             Description = "Create open ITA with MFA - Reset",
-            SkillFolder = "lfp-mfa-ticket",
-            Script = "lfp-mfa-ticket.mjs",
+            SkillFolder = "lfp-open-ticket",
+            Script = "lfp-open-ticket.mjs",
             SupportsDryRun = true,
             MutatesLive = true,
             RequiresVault = false,
