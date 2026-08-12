@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <AssemblyName>LfpHub</AssemblyName>
+    <RootNamespace>LfpHub</RootNamespace>
+    <Version>0.2.0</Version>
+    <Product>LFP Hub</Product>
+    <Description>GFNV-only TeslaLFP password / MFA close-out. Not part of Deskside Hub.</Description>
+    <Company>Tesla IT · GFNV</Company>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DesksideHub\DesksideHub.Core\DesksideHub.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="Templates\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="Templates" />
+  </ItemGroup>
+
+</Project>
