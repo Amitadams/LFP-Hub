@@ -4,6 +4,7 @@ using System.Windows;
 using DesksideHub.Models;
 using DesksideHub.Platform;
 using DesksideHub.Services;
+using Microsoft.Win32;
 
 namespace LfpHub;
 
@@ -12,6 +13,8 @@ public partial class MainWindow : Window
     readonly JobRunner _runner = new();
     readonly string? _nodeExe;
     readonly string? _skillsRoot;
+    List<BulkCloseoutRow> _bulkRows = [];
+    bool _bulkCancel;
 
     public MainWindow()
     {
@@ -29,6 +32,7 @@ public partial class MainWindow : Window
     }
 
     bool IsOpenTicketJob => RadJobOpenTicket?.IsChecked == true;
+    bool IsBulkJob => RadJobBulk?.IsChecked == true;
 
     void RefreshStatusReady()
     {
@@ -59,17 +63,27 @@ public partial class MainWindow : Window
             || OpenTicketPanel is null
             || CloseoutOptionsPanel is null
             || OpenTicketOptionsPanel is null
-            || TempPanel is null)
+            || TempPanel is null
+            || BulkPanel is null
+            || SingleIdentityCard is null)
             return;
 
         var openTicket = IsOpenTicketJob;
-        CloseoutTypePanel.Visibility = openTicket ? Visibility.Collapsed : Visibility.Visible;
+        var bulk = IsBulkJob;
+
+        SingleIdentityCard.Visibility = bulk ? Visibility.Collapsed : Visibility.Visible;
+        BulkPanel.Visibility = bulk ? Visibility.Visible : Visibility.Collapsed;
         OpenTicketPanel.Visibility = openTicket ? Visibility.Visible : Visibility.Collapsed;
-        CloseoutOptionsPanel.Visibility = openTicket ? Visibility.Collapsed : Visibility.Visible;
         OpenTicketOptionsPanel.Visibility = openTicket ? Visibility.Visible : Visibility.Collapsed;
 
-        if (openTicket)
+        // Close-out type + options for single close-out and bulk (password/setup/mfa)
+        var closeoutLike = !openTicket;
+        CloseoutTypePanel.Visibility = closeoutLike ? Visibility.Visible : Visibility.Collapsed;
+        CloseoutOptionsPanel.Visibility = closeoutLike ? Visibility.Visible : Visibility.Collapsed;
+
+        if (openTicket || bulk)
         {
+            // Bulk: OTP comes from each row — hide single OTP field
             TempPanel.Visibility = Visibility.Collapsed;
         }
         else
@@ -78,6 +92,10 @@ public partial class MainWindow : Window
                 ? Visibility.Collapsed
                 : Visibility.Visible;
         }
+
+        // MFA bulk doesn't need passwords in the list — still allow password mode default
+        if (bulk && BulkParseStatus is not null && _bulkRows.Count == 0 && string.IsNullOrWhiteSpace(BulkParseStatus.Text))
+            BulkParseStatus.Text = "Paste rows or load a CSV, then Parse.";
     }
 
     void BtnClearLog_Click(object sender, RoutedEventArgs e) => LogBox.Clear();
@@ -87,6 +105,56 @@ public partial class MainWindow : Window
         var win = new SettingsWindow { Owner = this };
         win.ShowDialog();
         RefreshStatusReady();
+    }
+
+    bool BulkRequiresPassword =>
+        SelectedMode(RadSetup?.IsChecked == true, RadMfa?.IsChecked == true) is not "mfa";
+
+    void BtnLoadCsv_Click(object sender, RoutedEventArgs e)
+    {
+        var dlg = new OpenFileDialog
+        {
+            Title = "Load bulk close-out list",
+            Filter = "CSV or text (*.csv;*.txt)|*.csv;*.txt|All files (*.*)|*.*",
+            CheckFileExists = true,
+        };
+        if (dlg.ShowDialog(this) != true) return;
+        try
+        {
+            TxtBulk.Text = File.ReadAllText(dlg.FileName);
+            ApplyBulkParse(BulkCloseoutParser.Parse(TxtBulk.Text, BulkRequiresPassword));
+        }
+        catch (Exception ex)
+        {
+            ErrText.Text = ex.Message;
+        }
+    }
+
+    void BtnParseBulk_Click(object sender, RoutedEventArgs e) =>
+        ApplyBulkParse(BulkCloseoutParser.Parse(TxtBulk.Text, BulkRequiresPassword));
+
+    void ApplyBulkParse(BulkParseResult parsed)
+    {
+        _bulkRows = parsed.Rows;
+        foreach (var err in parsed.Errors)
+            AppendLog("parse: " + err + "\n");
+
+        if (_bulkRows.Count == 0)
+        {
+            BulkParseStatus.Text = parsed.Errors.Count > 0
+                ? $"{parsed.Errors.Count} error(s), 0 rows"
+                : "No rows found";
+            ErrText.Text = parsed.Errors.Count > 0 ? parsed.Errors[0] : "No bulk rows to run.";
+            return;
+        }
+
+        ErrText.Text = "";
+        BulkParseStatus.Text = parsed.Errors.Count > 0
+            ? $"{_bulkRows.Count} ready · {parsed.Errors.Count} skipped"
+            : $"{_bulkRows.Count} ready";
+        AppendLog($"\n── bulk parse: {_bulkRows.Count} user(s) ──\n");
+        foreach (var r in _bulkRows)
+            AppendLog($"  {r.Username}" + (string.IsNullOrEmpty(r.Name) ? "" : $" ({r.Name})") + "\n");
     }
 
     void AppendLog(string line)
@@ -105,7 +173,11 @@ public partial class MainWindow : Window
             RegexOptions.IgnoreCase);
     }
 
-    void BtnStop_Click(object sender, RoutedEventArgs e) => _runner.Cancel();
+    void BtnStop_Click(object sender, RoutedEventArgs e)
+    {
+        _bulkCancel = true;
+        _runner.Cancel();
+    }
 
     static string SelectedMode(bool setup, bool mfa) =>
         setup ? "setup" : mfa ? "mfa" : "password";
@@ -134,10 +206,175 @@ public partial class MainWindow : Window
 
         AppConfig.WriteTechIdentityFile(cfg.Tech);
 
-        if (IsOpenTicketJob)
+        if (IsBulkJob)
+            await RunBulkCloseoutAsync(cfg);
+        else if (IsOpenTicketJob)
             await RunOpenTicketAsync(cfg);
         else
             await RunCloseoutAsync(cfg);
+    }
+
+    async Task RunBulkCloseoutAsync(AppConfig cfg)
+    {
+        if (!Directory.Exists(Path.Combine(_skillsRoot!, "lfp-reset")))
+        {
+            ErrText.Text = "lfp-reset skill not found.";
+            return;
+        }
+
+        var mode = SelectedMode(RadSetup.IsChecked == true, RadMfa.IsChecked == true);
+        // Re-parse so edits since last Parse are included
+        var parsed = BulkCloseoutParser.Parse(TxtBulk.Text, requirePassword: mode is not "mfa");
+        ApplyBulkParse(parsed);
+        if (_bulkRows.Count == 0)
+            return;
+
+        var templatesDir = AppConfig.ResolveTemplatesDir(cfg);
+        var templateFile = Path.Combine(templatesDir, TemplateFiles.ForMode(mode));
+        if (!File.Exists(templateFile))
+        {
+            ErrText.Text = $"Template missing: {Path.GetFileName(templateFile)}. Open Settings.";
+            return;
+        }
+
+        var dry = ChkDryRun.IsChecked == true;
+        if (!dry)
+        {
+            var ok = MessageBox.Show(
+                this,
+                $"LIVE bulk close-out for {_bulkRows.Count} user(s).\n\nTeams / comment / close each (unless skipped).\n\nContinue?",
+                "Confirm bulk",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning,
+                MessageBoxResult.No);
+            if (ok != MessageBoxResult.Yes)
+                return;
+        }
+
+        _bulkCancel = false;
+        BtnRun.IsEnabled = false;
+        BtnStop.IsEnabled = true;
+        var okCount = 0;
+        var failCount = 0;
+        AppendLog(dry
+            ? $"\n── bulk dry-run · {_bulkRows.Count} ──\n"
+            : $"\n── bulk LIVE · {_bulkRows.Count} ──\n");
+
+        try
+        {
+            for (var i = 0; i < _bulkRows.Count; i++)
+            {
+                if (_bulkCancel)
+                {
+                    AppendLog("\n── bulk cancelled ──\n");
+                    StatusText.Text = $"Bulk cancelled · {okCount} ok · {failCount} failed";
+                    break;
+                }
+
+                var row = _bulkRows[i];
+                AppendLog($"\n── [{i + 1}/{_bulkRows.Count}] {row.Username} ──\n");
+                StatusText.Text = $"Bulk {i + 1}/{_bulkRows.Count} · {row.Username}";
+
+                var args = BuildCloseoutArgs(
+                    mode,
+                    templatesDir,
+                    username: row.Username,
+                    ita: "",
+                    name: row.Name,
+                    badge: row.Badge,
+                    temp: mode is "mfa" ? "" : row.TempPassword);
+
+                var job = new HubJob
+                {
+                    Id = "lfp-reset",
+                    Title = $"Bulk · {row.Username}",
+                    Description = "TeslaLFP close-out",
+                    SkillFolder = "lfp-reset",
+                    Script = "lfp-reset.mjs",
+                    SupportsDryRun = true,
+                    MutatesLive = true,
+                    RequiresVault = true,
+                    BaseArgs = args,
+                };
+
+                try
+                {
+                    var result = await _runner.RunAsync(
+                        job,
+                        _skillsRoot!,
+                        _nodeExe!,
+                        new JobRunOptions
+                        {
+                            DryRun = dry,
+                            // Prefer headless for bulk unless user wants visible SSO
+                            VisibleBrowser = ChkVisible.IsChecked == true,
+                        });
+                    AppendLog($"── {row.Username} exit {result.ExitCode} ──\n");
+                    if (result.Success) okCount++;
+                    else failCount++;
+                }
+                catch (Exception ex)
+                {
+                    failCount++;
+                    AppendLog($"ERROR {row.Username}: {ex.Message}\n");
+                }
+            }
+
+            if (!_bulkCancel)
+            {
+                AppendLog($"\n── bulk done · {okCount} ok · {failCount} failed ──\n");
+                StatusText.Text = $"Bulk done · {okCount} ok · {failCount} failed";
+            }
+        }
+        finally
+        {
+            BtnRun.IsEnabled = true;
+            BtnStop.IsEnabled = false;
+            _bulkCancel = false;
+        }
+    }
+
+    string[] BuildCloseoutArgs(
+        string mode,
+        string templatesDir,
+        string username,
+        string ita,
+        string name,
+        string badge,
+        string temp)
+    {
+        var args = new List<string>
+        {
+            $"--{mode}",
+            "--templates-dir",
+            templatesDir,
+            "--tech-identity",
+            AppConfig.TechIdentityPath,
+        };
+        if (!string.IsNullOrWhiteSpace(temp) && mode is not "mfa")
+        {
+            args.Add("--temp");
+            args.Add(temp);
+        }
+        if (!string.IsNullOrWhiteSpace(name))
+        {
+            args.Add("--name");
+            args.Add(name);
+        }
+        if (!string.IsNullOrWhiteSpace(badge))
+        {
+            args.Add("--badge");
+            args.Add(badge);
+        }
+        if (ChkNoTeams.IsChecked == true)
+            args.Add("--no-teams");
+        if (ChkNoClose.IsChecked == true)
+            args.Add("--no-close");
+        if (!string.IsNullOrWhiteSpace(ita))
+            args.Add(ita);
+        if (!string.IsNullOrWhiteSpace(username))
+            args.Add(username);
+        return args.ToArray();
     }
 
     async Task RunOpenTicketAsync(AppConfig cfg)
@@ -268,38 +505,7 @@ public partial class MainWindow : Window
                 return;
         }
 
-        var args = new List<string>
-        {
-            $"--{mode}",
-            "--templates-dir",
-            templatesDir,
-            "--tech-identity",
-            AppConfig.TechIdentityPath,
-        };
-        if (!string.IsNullOrWhiteSpace(temp) && mode is not "mfa")
-        {
-            args.Add("--temp");
-            args.Add(temp);
-        }
-        if (!string.IsNullOrWhiteSpace(name))
-        {
-            args.Add("--name");
-            args.Add(name);
-        }
-        if (!string.IsNullOrWhiteSpace(badge))
-        {
-            args.Add("--badge");
-            args.Add(badge);
-        }
-        if (ChkNoTeams.IsChecked == true)
-            args.Add("--no-teams");
-        if (ChkNoClose.IsChecked == true)
-            args.Add("--no-close");
-        if (!string.IsNullOrWhiteSpace(ita))
-            args.Add(ita);
-        if (!string.IsNullOrWhiteSpace(username))
-            args.Add(username);
-
+        var args = BuildCloseoutArgs(mode, templatesDir, username, ita, name, badge, temp);
         var job = new HubJob
         {
             Id = "lfp-reset",
@@ -310,7 +516,7 @@ public partial class MainWindow : Window
             SupportsDryRun = true,
             MutatesLive = true,
             RequiresVault = true,
-            BaseArgs = args.ToArray(),
+            BaseArgs = args,
         };
 
         await ExecuteJobAsync(job, dry);
