@@ -20,6 +20,8 @@ public sealed class AppConfig
     public TechIdentity Tech { get; set; } = new();
     /// <summary>True after first-time setup wizard completes.</summary>
     public bool SetupComplete { get; set; }
+    /// <summary>Theme id from <see cref="LfpThemes"/> (e.g. lfp-plant).</summary>
+    public string Theme { get; set; } = LfpThemes.Default;
 
     public static string AppDataDir =>
         Path.Combine(
@@ -87,6 +89,7 @@ public sealed class AppConfig
         }
 
         cfg.Tech ??= new TechIdentity();
+        cfg.Theme = LfpThemes.Normalize(cfg.Theme);
 
         if (cfg.Tech.IsConfigured && !cfg.SetupComplete)
             cfg.SetupComplete = true;
@@ -98,6 +101,7 @@ public sealed class AppConfig
     {
         Directory.CreateDirectory(AppDataDir);
         Tech ??= new TechIdentity();
+        Tech.NormalizeAsciiPunctuation();
         var utf8 = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
         File.WriteAllText(ConfigPath, JsonSerializer.Serialize(this, JsonOpts) + Environment.NewLine, utf8);
         WriteTechIdentityFile(Tech);
@@ -107,6 +111,7 @@ public sealed class AppConfig
     public static void WriteTechIdentityFile(TechIdentity tech)
     {
         Directory.CreateDirectory(AppDataDir);
+        tech.NormalizeAsciiPunctuation();
         var payload = new
         {
             displayName = tech.DisplayName?.Trim() ?? "",
@@ -130,8 +135,8 @@ public sealed class TechIdentity
     public string Email { get; set; } = "";
     public string Username { get; set; } = "";
     public string Site { get; set; } = "GFNV";
-    public string SignatureTitle { get; set; } = "Tesla IT Support — GFNV";
-    public string WalkupHours { get; set; } = "7:00 AM – 7:00 PM";
+    public string SignatureTitle { get; set; } = "Tesla IT Support - GFNV";
+    public string WalkupHours { get; set; } = "7:00 AM - 7:00 PM";
 
     [JsonIgnore]
     public bool IsConfigured =>
@@ -145,11 +150,42 @@ public sealed class TechIdentity
         if (string.IsNullOrWhiteSpace(Username))
             return "Username is required.";
         if (Username.Contains('@', StringComparison.Ordinal))
-            return "Username only — no @tesla.com.";
+            return "Username only - no @tesla.com.";
         if (!string.IsNullOrWhiteSpace(Email)
             && !Regex.IsMatch(Email.Trim(), @"^[^@\s]+@[^@\s]+\.[^@\s]+$"))
             return "Email looks invalid.";
         return "";
+    }
+
+    /// <summary>
+    /// Keep ticket signatures ASCII-safe (Teams/Jira often mojibake curly dashes).
+    /// </summary>
+    public void NormalizeAsciiPunctuation()
+    {
+        DisplayName = ToAsciiPunct(DisplayName);
+        Email = ToAsciiPunct(Email);
+        Username = ToAsciiPunct(Username);
+        Site = ToAsciiPunct(Site);
+        SignatureTitle = ToAsciiPunct(SignatureTitle);
+        WalkupHours = ToAsciiPunct(WalkupHours);
+    }
+
+    static string ToAsciiPunct(string? s)
+    {
+        if (string.IsNullOrEmpty(s)) return s ?? "";
+        return s
+            .Replace('\u2014', '-') // em dash
+            .Replace('\u2013', '-') // en dash
+            .Replace('\u2012', '-')
+            .Replace('\u2010', '-')
+            .Replace('\u00A0', ' ')
+            .Replace('\u2026', '.')
+            .Replace("...", "...")
+            .Replace('\u2018', '\'')
+            .Replace('\u2019', '\'')
+            .Replace('\u201C', '"')
+            .Replace('\u201D', '"')
+            .Replace('\u00B7', '-');
     }
 }
 

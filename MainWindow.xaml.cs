@@ -49,8 +49,8 @@ public partial class MainWindow : Window
         if (BulkParseStatus is null) return;
         var filled = _bulkGrid.Count(r => !r.IsEmpty);
         BulkParseStatus.Text = filled == 0
-            ? "Type in the table, Paste (Ctrl+V), or Load CSV…"
-            : $"{filled} row(s) entered — Run validates and starts.";
+            ? "Type in the table, Paste (Ctrl+V), or Load CSV."
+            : $"{filled} row(s) entered - Run validates and starts.";
     }
 
     void BulkGrid_Loaded(object sender, RoutedEventArgs e)
@@ -90,7 +90,7 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Multi-line / multi-column clipboard fills table rows only — never starts a run.
+    /// Multi-line / multi-column clipboard fills table rows only - never starts a run.
     /// Single short value leaves default cell paste alone.
     /// </summary>
     bool TryPasteBulkFromClipboard()
@@ -146,18 +146,18 @@ public partial class MainWindow : Window
         }
 
         _bulkGrid = grid;
-        _bulkRows = []; // clear any previous run queue — paste is edit-only
+        _bulkRows = []; // clear any previous run queue - paste is edit-only
         BindBulkGrid();
 
         ErrText.Text = "";
-        BulkParseStatus.Text = $"{filled} row(s) filled — review Type/Password, then Run when ready.";
-        AppendLog($"\n── {sourceLabel}: filled {filled} table row(s) (not run) ──\n");
+        BulkParseStatus.Text = $"{filled} row(s) filled - review Type/Password, then Run when ready.";
+        AppendLog($"\n-- {sourceLabel}: filled {filled} table row(s) (not run) --\n");
         foreach (var r in _bulkGrid.Where(x => !x.IsEmpty).Take(25))
         {
             AppendLog($"  {r.Username}" +
-                      (string.IsNullOrEmpty(r.DisplayName) ? "" : $" · {r.DisplayName}") +
-                      $" · {r.TypeLabel}" +
-                      (string.IsNullOrEmpty(r.Ita) ? "" : $" · {r.Ita}") + "\n");
+                      (string.IsNullOrEmpty(r.DisplayName) ? "" : $" - {r.DisplayName}") +
+                      $" - {r.TypeLabel}" +
+                      (string.IsNullOrEmpty(r.Ita) ? "" : $" - {r.Ita}") + "\n");
         }
     }
 
@@ -188,9 +188,9 @@ public partial class MainWindow : Window
         else if (!Directory.Exists(Path.Combine(_skillsRoot, "lfp-reset")))
             StatusText.Text = "lfp-reset skill missing.";
         else if (!Directory.Exists(Path.Combine(_skillsRoot, "lfp-open-ticket")))
-            StatusText.Text = $"Ready · {cfg.Tech.DisplayName} (open LFP ticket skill missing)";
+            StatusText.Text = $"Ready - {cfg.Tech.DisplayName} (open LFP ticket skill missing)";
         else
-            StatusText.Text = $"Ready · {cfg.Tech.DisplayName}";
+            StatusText.Text = $"Ready - {cfg.Tech.DisplayName}";
     }
 
     void Job_Changed(object sender, RoutedEventArgs e) => UpdateJobUi();
@@ -223,7 +223,7 @@ public partial class MainWindow : Window
 
         if (openTicket || bulk)
         {
-            // Bulk: OTP is a grid column — hide single OTP field
+            // Bulk: OTP is a grid column - hide single OTP field
             TempPanel.Visibility = Visibility.Collapsed;
         }
         else
@@ -271,7 +271,7 @@ public partial class MainWindow : Window
         BindBulkGrid();
         ErrText.Text = "";
         RefreshBulkStatusFromGrid();
-        AppendLog("\n── sample rows filled into table (not run) ──\n");
+        AppendLog("\n-- sample rows filled into table (not run) --\n");
     }
 
     void BtnLoadCsv_Click(object sender, RoutedEventArgs e)
@@ -387,8 +387,8 @@ public partial class MainWindow : Window
             .Select(g => $"{g.Count()} {g.Key}")
             .ToList();
         BulkParseStatus.Text = parsed.Errors.Count > 0
-            ? $"{_bulkRows.Count} ready · {string.Join(" · ", byType)} · {parsed.Errors.Count} skipped"
-            : $"{_bulkRows.Count} ready · {string.Join(" · ", byType)}";
+            ? $"{_bulkRows.Count} ready - {string.Join(" - ", byType)} - {parsed.Errors.Count} skipped"
+            : $"{_bulkRows.Count} ready - {string.Join(" - ", byType)}";
 
         var templatesDir = AppConfig.ResolveTemplatesDir(cfg);
         foreach (var mode in _bulkRows.Select(r => r.Mode).Distinct())
@@ -421,12 +421,12 @@ public partial class MainWindow : Window
         var okCount = 0;
         var failCount = 0;
         AppendLog(dry
-            ? $"\n── bulk dry-run · {_bulkRows.Count} ──\n"
-            : $"\n── bulk LIVE · {_bulkRows.Count} ──\n");
+            ? $"\n-- bulk dry-run - {_bulkRows.Count} --\n"
+            : $"\n-- bulk LIVE - {_bulkRows.Count} --\n");
         foreach (var r in _bulkRows)
-            AppendLog($"  {r.Username} · {r.ModeLabel}" +
-                      (string.IsNullOrEmpty(r.Name) ? "" : $" · {r.Name}") +
-                      (string.IsNullOrEmpty(r.Ita) ? "" : $" · {r.Ita}") + "\n");
+            AppendLog($"  {r.Username} - {r.ModeLabel}" +
+                      (string.IsNullOrEmpty(r.Name) ? "" : $" - {r.Name}") +
+                      (string.IsNullOrEmpty(r.Ita) ? "" : $" - {r.Ita}") + "\n");
 
         try
         {
@@ -434,14 +434,14 @@ public partial class MainWindow : Window
             {
                 if (_bulkCancel)
                 {
-                    AppendLog("\n── bulk cancelled ──\n");
-                    StatusText.Text = $"Bulk cancelled · {okCount} ok · {failCount} failed";
+                    AppendLog("\n-- bulk cancelled --\n");
+                    StatusText.Text = $"Bulk cancelled - {okCount} ok - {failCount} failed";
                     break;
                 }
 
                 var row = _bulkRows[i];
-                AppendLog($"\n── [{i + 1}/{_bulkRows.Count}] {row.Username} · {row.ModeLabel} ──\n");
-                StatusText.Text = $"Bulk {i + 1}/{_bulkRows.Count} · {row.Username} · {row.ModeLabel}";
+                AppendLog($"\n-- [{i + 1}/{_bulkRows.Count}] {row.Username} - {row.ModeLabel} --\n");
+                StatusText.Text = $"Bulk {i + 1}/{_bulkRows.Count} - {row.Username} - {row.ModeLabel}";
 
                 var args = BuildCloseoutArgs(
                     row.Mode,
@@ -455,7 +455,7 @@ public partial class MainWindow : Window
                 var job = new HubJob
                 {
                     Id = "lfp-reset",
-                    Title = $"Bulk · {row.Username} · {row.ModeLabel}",
+                    Title = $"Bulk - {row.Username} - {row.ModeLabel}",
                     Description = "TeslaLFP close-out",
                     SkillFolder = "lfp-reset",
                     Script = "lfp-reset.mjs",
@@ -477,7 +477,7 @@ public partial class MainWindow : Window
                             // Prefer headless for bulk unless user wants visible SSO
                             VisibleBrowser = ChkVisible.IsChecked == true,
                         });
-                    AppendLog($"── {row.Username} exit {result.ExitCode} ──\n");
+                    AppendLog($"-- {row.Username} exit {result.ExitCode} --\n");
                     if (result.Success) okCount++;
                     else failCount++;
                 }
@@ -490,8 +490,8 @@ public partial class MainWindow : Window
 
             if (!_bulkCancel)
             {
-                AppendLog($"\n── bulk done · {okCount} ok · {failCount} failed ──\n");
-                StatusText.Text = $"Bulk done · {okCount} ok · {failCount} failed";
+                AppendLog($"\n-- bulk done - {okCount} ok - {failCount} failed --\n");
+                StatusText.Text = $"Bulk done - {okCount} ok - {failCount} failed";
             }
         }
         finally
@@ -704,7 +704,7 @@ public partial class MainWindow : Window
     {
         BtnRun.IsEnabled = false;
         BtnStop.IsEnabled = true;
-        AppendLog(dry ? "\n── dry-run ──\n" : "\n── live ──\n");
+        AppendLog(dry ? "\n-- dry-run --\n" : "\n-- live --\n");
         try
         {
             var result = await _runner.RunAsync(
@@ -716,7 +716,7 @@ public partial class MainWindow : Window
                     DryRun = dry,
                     VisibleBrowser = ChkVisible.IsChecked == true,
                 });
-            AppendLog($"\n── exit {result.ExitCode} in {result.Duration:mm\\:ss} ──\n");
+            AppendLog($"\n-- exit {result.ExitCode} in {result.Duration:mm\\:ss} --\n");
             StatusText.Text = result.Success
                 ? $"Done ({result.Duration:mm\\:ss})"
                 : $"Failed (exit {result.ExitCode})";

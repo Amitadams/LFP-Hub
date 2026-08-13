@@ -4,7 +4,7 @@ Hi [User],
 
 I am not seeing a record of that user account existing.
 
-If it doesn't exist you’ll have to go through the complete process here: https://confluence.teslamotors.com/display/PH/0.+Application+Access
+If it doesn't exist you'll have to go through the complete process here: https://confluence.teslamotors.com/display/PH/0.+Application+Access
 
 Since the Tesla LFP account is separate from your normal Tesla account, I will need to refer you to a different team.
 

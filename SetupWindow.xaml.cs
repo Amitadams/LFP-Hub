@@ -7,13 +7,13 @@ public partial class SetupWindow : Window
     public SetupWindow()
     {
         InitializeComponent();
-        // Blank identity only — never seed another tech's name.
+        // Blank identity only - never seed another tech's name.
         TxtDisplayName.Text = "";
         TxtUsername.Text = "";
         TxtEmail.Text = "";
         TxtSite.Text = "GFNV";
-        TxtSignatureTitle.Text = "Tesla IT Support — GFNV";
-        TxtWalkupHours.Text = "7:00 AM – 7:00 PM";
+        TxtSignatureTitle.Text = "Tesla IT Support - GFNV";
+        TxtWalkupHours.Text = "7:00 AM - 7:00 PM";
         TxtDisplayName.Focus();
     }
 

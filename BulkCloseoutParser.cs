@@ -205,13 +205,13 @@ public static class BulkCloseoutParser
 
     public static ObservableCollection<BulkGridRow> ParseToGrid(string text, string defaultMode = "password")
     {
-        // Lenient fill for paste/CSV — no password validation; Run validates later.
+        // Lenient fill for paste/CSV - no password validation; Run validates later.
         return FillGridFromText(text, defaultMode, extraBlankRows: 3);
     }
 
     /// <summary>
     /// Map clipboard/CSV text into grid rows without validating passwords.
-    /// Never runs jobs — UI fill only.
+    /// Never runs jobs - UI fill only.
     /// </summary>
     public static ObservableCollection<BulkGridRow> FillGridFromText(
         string text,

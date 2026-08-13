@@ -98,7 +98,9 @@ Depends on sibling `../DesksideHub/DesksideHub.Core`.
 
 ## Version
 
-**0.0.12** — Bulk table paste fills rows (Ctrl+V / Paste / CSV); Run starts jobs.
+**0.0.14** - Themes, themed scrollbars, bulk paste-fills-table, ASCII-safe ticket templates.
+
+**0.0.12** - Bulk table paste fills rows (Ctrl+V / Paste / CSV); Run starts jobs.
 
 **0.0.10** — Bulk CSV headers: Username, Password, Name, Ticket Type, Badge (per-row types).
 

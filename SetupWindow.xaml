@@ -1,16 +1,16 @@
-<Window x:Class="LfpHub.SetupWindow"
+﻿<Window x:Class="LfpHub.SetupWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="LFP Hub — First-time setup"
+        Title="LFP Hub - First-time setup"
         Height="560" Width="520"
         MinHeight="480" MinWidth="440"
         ResizeMode="CanMinimize"
         WindowStartupLocation="CenterScreen"
-        Background="{StaticResource BgBrush}"
+        Background="{DynamicResource BgBrush}"
         Icon="pack://application:,,,/Assets/LfpHub.ico">
   <DockPanel Margin="24">
     <StackPanel DockPanel.Dock="Bottom" Margin="0,18,0,0">
-      <TextBlock x:Name="ErrText" Foreground="{StaticResource DangerBrush}"
+      <TextBlock x:Name="ErrText" Foreground="{DynamicResource DangerBrush}"
                  FontSize="12.5" TextWrapping="Wrap" Margin="0,0,0,10"/>
       <Button x:Name="BtnContinue" Content="Continue" Click="BtnContinue_Click"
               Style="{StaticResource PrimaryButton}" HorizontalAlignment="Stretch"
@@ -44,12 +44,12 @@
           </StackPanel>
           <StackPanel Grid.Column="2">
             <TextBlock Style="{StaticResource FieldLabel}" Text="Walk-up hours"/>
-            <TextBox x:Name="TxtWalkupHours" Text="7:00 AM – 7:00 PM"/>
+            <TextBox x:Name="TxtWalkupHours" Text="7:00 AM - 7:00 PM"/>
           </StackPanel>
         </Grid>
 
         <TextBlock Style="{StaticResource FieldLabel}" Margin="0,12,0,0" Text="Signature title"/>
-        <TextBox x:Name="TxtSignatureTitle" Text="Tesla IT Support — GFNV"/>
+        <TextBox x:Name="TxtSignatureTitle" Text="Tesla IT Support - GFNV"/>
       </StackPanel>
     </ScrollViewer>
   </DockPanel>

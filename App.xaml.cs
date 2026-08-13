@@ -15,6 +15,7 @@ public partial class App : Application
         base.OnStartup(e);
 
         AppConfig.EnsureWorkingTemplates();
+        ThemeService.Apply(AppConfig.Load().Theme);
 
         if (AppConfig.NeedsFirstRunSetup())
         {

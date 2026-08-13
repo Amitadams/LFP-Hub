@@ -5,7 +5,7 @@ Your LFP account is: [username]@teslalfp.com
 This is your one-time password for your LFP account:
 [PASSWORD]
 
-If you haven't already, you will need to set up Microsoft Authenticator for this account. Use a **private / incognito** browser on your phone — a normal browser will sign in with your regular Tesla account instead of LFP.
+If you haven't already, you will need to set up Microsoft Authenticator for this account. Use a **private / incognito** browser on your phone - a normal browser will sign in with your regular Tesla account instead of LFP.
 
 1. Open a private/incognito browser on your phone
 2. Go to https://sspr.tesla.com

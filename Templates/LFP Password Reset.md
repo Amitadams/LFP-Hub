@@ -7,7 +7,7 @@ Your LFP password has been reset.
 **One-time password:**
 [PASSWORD]
 
-Sign in with that password, then change it when prompted. If Microsoft Authenticator is not set up yet on this LFP account, use a **private / incognito** browser on your phone and go to https://sspr.tesla.com → **Manage Multifactor Authentication**. A normal browser will use your regular Tesla account.
+Sign in with that password, then change it when prompted. If Microsoft Authenticator is not set up yet on this LFP account, use a **private / incognito** browser on your phone and go to https://sspr.tesla.com -> **Manage Multifactor Authentication**. A normal browser will use your regular Tesla account.
 
 The new password must be at least **14 characters**, with 1 uppercase, 1 lowercase, 1 number, and 1 symbol.
 
