@@ -98,6 +98,8 @@ Depends on sibling `../DesksideHub/DesksideHub.Core`.
 
 ## Version
 
+**0.0.15** - Add Portal Aperture Dark theme.
+
 **0.0.14** - Themes, themed scrollbars, bulk paste-fills-table, ASCII-safe ticket templates.
 
 **0.0.12** - Bulk table paste fills rows (Ctrl+V / Paste / CSV); Run starts jobs.

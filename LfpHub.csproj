@@ -8,9 +8,9 @@
     <UseWPF>true</UseWPF>
     <AssemblyName>LfpHub</AssemblyName>
     <RootNamespace>LfpHub</RootNamespace>
-    <Version>0.0.14</Version>
-    <AssemblyVersion>0.0.14.0</AssemblyVersion>
-    <FileVersion>0.0.14.0</FileVersion>
+    <Version>0.0.15</Version>
+    <AssemblyVersion>0.0.15.0</AssemblyVersion>
+    <FileVersion>0.0.15.0</FileVersion>
     <Product>LFP Hub</Product>
     <Description>GFNV-only TeslaLFP password / MFA close-out. Not part of Deskside Hub.</Description>
     <Company>Tesla IT · GFNV</Company>

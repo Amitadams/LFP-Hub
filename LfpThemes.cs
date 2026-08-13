@@ -8,6 +8,7 @@ public static class LfpThemes
     public const string CalmLight = "calm-light";
     public const string TeslaDark = "tesla-dark";
     public const string TeslaLight = "tesla-light";
+    public const string ApertureDark = "aperture-dark";
     public const string Default = LfpPlant;
 
     public static IReadOnlyList<LfpThemeInfo> All { get; } =
@@ -27,6 +28,9 @@ public static class LfpThemes
         new(TeslaLight, "Tesla Light",
             "Light panels and Tesla red.",
             IsDark: false, Palettes.TeslaLight),
+        new(ApertureDark, "Portal Aperture Dark",
+            "Black lab panels and Aperture orange. The cake is not in the installer.",
+            IsDark: true, Palettes.ApertureDark),
     ];
 
     public static LfpThemeInfo Current { get; private set; } = All[0];
@@ -240,4 +244,29 @@ file static class Palettes
         ScrollThumb: "#BDBDBD",
         ScrollThumbHover: "#9E9E9E",
         ScrollThumbDrag: "#757575");
+
+    public static readonly LfpPalette ApertureDark = new(
+        Bg: "#0C0B09",
+        Panel: "#161410",
+        PanelAlt: "#1E1B16",
+        Border: "#4A3A22",
+        Text: "#F4EDE0",
+        Muted: "#C4B59A",
+        Dim: "#8A7D68",
+        Accent: "#FF9A00",
+        AccentDeep: "#C45A00",
+        OnAccent: "#1A1200",
+        InputBg: "#12100C",
+        InputBorder: "#6A5428",
+        Ok: "#7DDF6A",
+        Warn: "#FFC857",
+        Danger: "#FF6B4A",
+        LogBg: "#0A0907",
+        SectionLabel: "#FF9A00",
+        Chip: "#2A241C",
+        ChipActive: "#3A2808",
+        ChipBorderActive: "#FF9A00",
+        ScrollThumb: "#5A4A30",
+        ScrollThumbHover: "#7A6438",
+        ScrollThumbDrag: "#9A7A40");
 }
